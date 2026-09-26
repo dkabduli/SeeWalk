@@ -227,9 +227,14 @@ Needs **Python 3.10+** (the Gemini Interactions API isn't in SDK versions that s
 cd server
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-cp .env.example .env          # then fill in the keys (ask Abdul)
+cp .env.example .env          # then fill in the keys (see below)
 .venv/bin/python scripts/check_connections.py
 ```
+
+**Keys (free tier for now):**
+- **Gemini:** create **your own** free key at [aistudio.google.com/api-keys](https://aistudio.google.com/api-keys) so each of us has a separate rate limit. Billing will be enabled on one demo key before the field walk and live demo.
+- **ElevenLabs:** use the shared team key (ask Abdul; send it privately, never commit it).
+- The phone's frame interval will be configurable (`VITE_FRAME_INTERVAL_MS`, default 2500). Use **5000–6000** during development to stay under free-tier limits.
 
 `server/.env` is git-ignored. Variables:
 
