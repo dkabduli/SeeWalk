@@ -9,8 +9,9 @@ import { useWalkLoop } from "../camera/useWalkLoop";
  *  Not the real UI (that's Jibril's WalkMode); it shows everything the loop does so it can be
  *  tested on the iPhone before the rest exists. */
 
-interface LogLine { at: string; kind: "result" | "system" | "ask" | "voice" | "info"; text: string }
+interface LogLine { id: number; at: string; kind: "result" | "system" | "ask" | "voice" | "info"; text: string }
 
+let nextLogId = 0;
 const time = () => new Date().toLocaleTimeString([], { hour12: false });
 
 function describe(r: SceneResult) {
@@ -30,7 +31,7 @@ export default function CameraLab() {
   const lastResultAt = useRef<number | null>(null);
 
   const add = useCallback((kind: LogLine["kind"], text: string) => {
-    setLog((l) => [{ at: time(), kind, text }, ...l].slice(0, 80));
+    setLog((l) => [{ id: nextLogId++, at: time(), kind, text }, ...l].slice(0, 80));
   }, []);
 
   const onResult = useCallback((r: SceneResult) => {
@@ -119,8 +120,8 @@ export default function CameraLab() {
       </p>
 
       <ol className="log" aria-live="polite">
-        {log.map((l, i) => (
-          <li key={i} className={l.kind}><span>{l.at}</span> {l.text}</li>
+        {log.map((l) => (
+          <li key={l.id} className={l.kind}><span>{l.at}</span> {l.text}</li>
         ))}
       </ol>
 
