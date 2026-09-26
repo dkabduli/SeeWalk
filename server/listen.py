@@ -2,15 +2,17 @@
 
 The phone records short speech clips itself (Safari's built-in speech recognition is blocked on
 some iPhones: `service-not-allowed`) and sends each one here together with the current camera
-frame. In ONE Gemini call we transcribe the clip, work out which command (if any) was asked, and
-answer it from the frame, so the answer comes ~2 s after the walker stops talking.
+frame. In ONE Gemini call we transcribe the clip and work out which command (if any) was asked.
+Holding and read are answered here. What's ahead and what's in the way are answered by the app
+from the walking-scene look, so this call leaves those answers empty.
 
 Commands (all need the wake word "SeeWalk"):
-    whats_ahead  "what's ahead / in front of me?"   → a short description of the scene
+    whats_ahead  "what's ahead / in front of me?"   → the app answers from its scene look (answer stays "")
     holding      "what am I holding / what's in my hand?"
-    path         "what's blocking my path / is my path clear?"   (never says "clear" or "safe")
+    path         "what's blocking my path / is my path clear?"   → the app answers from its scene look (answer stays "")
     read         "read this / what does the sign say?"
     cross        "is it safe to cross?"   → the app plays a fixed refusal; never a yes
+    where        "where was the elevator?" → the app answers from the last 30 seconds, no new photo
     none         anything else (background talk, SeeWalk's own voice, no wake word)
 """
 import asyncio
@@ -32,30 +34,28 @@ router = APIRouter()
 _client = genai.Client(api_key=config.GEMINI_API_KEY)
 LANGUAGE = {"en": "English", "fr": "French"}
 
-Intent = Literal["none", "whats_ahead", "holding", "path", "read", "cross"]
+Intent = Literal["none", "whats_ahead", "holding", "path", "read", "cross", "where"]
 
 PROMPT = """The audio is a short clip from the phone microphone of a blind pedestrian. {image_note}
 1. heard: transcribe what was said ("" if nothing intelligible).
-2. intent: ONLY if the speaker says the wake word "SeeWalk" (it may sound like "see walk", "sea walk",
-   "C walk") AND asks one of these, in English or French:
-   - what is ahead / in front of me                                  → whats_ahead
+2. intent: ONLY if the speaker says the wake word "Vision Companion" (it may sound like "see walk",
+   "sea walk", "C walk") AND asks one of these, in English or French:
+   - what is ahead / in front of me / what is this / what is that    → whats_ahead
    - what am I holding / what is in my hand                          → holding
    - what is blocking my path / is my path clear / what's in my way  → path
    - read this / what does it say / read the sign                    → read
    - is it safe to cross / can I cross                               → cross
+   - where was / where were / où était (the elevator, the stairs)   → where
    Anything else (no wake word, background talk, or a voice announcing hazards like "Pothole ahead")
    is none.
 3. answer, in {language}, from the image only, for these intents:
-   - whats_ahead: describe what is in front in at most 12 words, most important first, as a short
-     phrase, not labels ("A table with a laptop and a cup, a chair on your left"). If nothing is
-     clearly visible: "Nothing detected ahead".
+   - whats_ahead, path: "" (the app answers from its own look at the walking corridor, so a second
+     description here would disagree with a street alert).
    - holding: name the object in the person's hand in at most 8 words ("A blue water bottle").
      If no hand or held object is visible: "I can't see anything in your hand".
-   - path: the obstacles in the walking path straight ahead, at most 12 words ("A chair and a bin
-     ahead"). If none: "Nothing detected in your path". Never say "clear" or "safe".
    - read: the visible text, word for word, at most 25 words. If none is readable: "I can't see any
      text to read".
-   - cross, none: "" (the app handles these).
+   - cross, where, none: "" (the app handles these).
 Never guess: describe only what is clearly visible."""
 
 
@@ -63,19 +63,40 @@ Never guess: describe only what is clearly visible."""
 # "What am I holding?" through without the wake word, and (2) turned SeeWalk's own alert "Bins
 # ahead. Crosswalk ahead." into "SeeWalk, cross ahead" → cross. The transcript must contain the
 # wake word AND a keyword for the command, or it's treated as none.
-WAKE = re.compile(r"\b(see[\s-]?walk|sea[\s-]?walk|c[\s-]walk|si[\s-]walk|cee[\s-]?walk)\b", re.I)
+WAKE = re.compile(
+    r"\b(vision[\s-]?companion|see[\s-]?walk|sea[\s-]?walk|c[\s-]?walk|si[\s-]?walk|cee[\s-]?walk)\b",
+    re.I,
+)
 KEYWORDS: dict[str, re.Pattern] = {
-    "whats_ahead": re.compile(r"ahead|front|devant|around|autour", re.I),
+    "whats_ahead": re.compile(
+        r"ahead|front|devant|around|autour|(?:what(?:'s| is|s)|whats) (?:this|that)|c'est quoi|qu'est[- ]ce que c'est",
+        re.I,
+    ),
     "holding": re.compile(r"hold|hand|tiens|tenir|main", re.I),
     "path": re.compile(r"path|way|block|obstacle|chemin|bloqu|passage", re.I),
     "read": re.compile(r"\bread|\bsay|\bsays|\bsign|\blis|\blire|\blisez|\bécrit|panneau", re.I),
     "cross": re.compile(r"safe|can i cross|should i cross|ok to cross|traverser|sécuritaire|en sécurité", re.I),
+    "where": re.compile(r"where was|where were|where'?s|où était|ou etait|où est|ou est", re.I),
 }
+
+
+# what's ahead / what's in my way are spoken from the scene look (gemini.py), not from this call.
+APP_ANSWERED = {"holding", "read"}
+
+
+def answer_for(intent: str, text: str) -> str:
+    """Keep Gemini's sentence only for holding and read. The path questions are answered elsewhere."""
+    return text.strip() if intent in APP_ANSWERED else ""
 
 
 def verified_intent(intent: str, heard: str) -> str:
     """Keep Gemini's intent only if the transcript backs it up."""
-    if intent == "none" or not WAKE.search(heard):
+    if not WAKE.search(heard):
+        return "none"
+    # "Where was the elevator?" is memory, even if the model heard it as what's ahead.
+    if KEYWORDS["where"].search(heard):
+        return "where"
+    if intent == "none":
         return "none"
     pattern = KEYWORDS.get(intent)
     return intent if pattern and pattern.search(heard) else "none"
@@ -90,7 +111,7 @@ class ListenRequest(BaseModel):
 class ListenResult(BaseModel):
     heard: str = Field(description="What the person said, transcribed")
     intent: Intent = Field(description="Which SeeWalk command was asked, or none")
-    answer: str = Field(description="Spoken answer for holding / path / read, otherwise empty")
+    answer: str = Field(description="Spoken answer for holding / read, otherwise empty")
     command: bool = Field(default=False, description="True if any command was asked (intent != none)")
 
 
@@ -129,7 +150,7 @@ async def detect_command(audio_b64: str, lang: str = "en", image_b64: str | None
     if intent != g.intent:
         log.info("listen: Gemini said %s for %r, not confirmed by the transcript → none", g.intent, g.heard)
     return ListenResult(
-        heard=g.heard, intent=intent, answer=g.answer.strip() if intent != "none" else "", command=intent != "none"
+        heard=g.heard, intent=intent, answer=answer_for(intent, g.answer), command=intent != "none"
     )
 
 

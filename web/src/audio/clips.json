@@ -84,8 +84,8 @@
     "fr": "Rien de détecté"
   },
   "intro": {
-    "en": "SeeWalk is on. I'll warn you about potholes, curbs and signs in your path. To ask me something, say SeeWalk, then: what's ahead, what am I holding, what's blocking my path, or read this.",
-    "fr": "SeeWalk est prêt. Je vous préviens des nids-de-poule, bordures et panneaux sur votre chemin. Pour me poser une question, dites SeeWalk, puis : qu'y a-t-il devant, qu'est-ce que je tiens, qu'est-ce qui bloque mon chemin, ou lis ceci."
+    "en": "Vision Companion is on. I'll warn you about potholes, curbs and signs in your path. To ask me something, say Vision Companion, then: what's ahead, what am I holding, what's blocking my path, or read this.",
+    "fr": "Vision Companion est prêt. Je vous préviens des nids-de-poule, bordures et panneaux sur votre chemin. Pour me poser une question, dites Vision Companion, puis : qu'y a-t-il devant, qu'est-ce que je tiens, qu'est-ce qui bloque mon chemin, ou lis ceci."
   },
   "cross_refusal": {
     "en": "I can't tell you when it's safe to cross. Listen for traffic and use your cane.",
@@ -246,5 +246,53 @@
   "st_door_right": {
     "en": "Door on your right",
     "fr": "Porte à droite"
+  },
+  "st_door_open_ahead": {
+    "en": "Open door ahead",
+    "fr": "Porte ouverte devant"
+  },
+  "st_door_open_left": {
+    "en": "Open door on your left",
+    "fr": "Porte ouverte à gauche"
+  },
+  "st_door_open_right": {
+    "en": "Open door on your right",
+    "fr": "Porte ouverte à droite"
+  },
+  "st_door_opening_ahead": {
+    "en": "Door opening ahead",
+    "fr": "Porte qui s'ouvre devant"
+  },
+  "st_door_opening_left": {
+    "en": "Door opening on your left",
+    "fr": "Porte qui s'ouvre à gauche"
+  },
+  "st_door_opening_right": {
+    "en": "Door opening on your right",
+    "fr": "Porte qui s'ouvre à droite"
+  },
+  "st_elevator_ahead": {
+    "en": "Elevator ahead",
+    "fr": "Ascenseur devant"
+  },
+  "st_elevator_left": {
+    "en": "Elevator on your left",
+    "fr": "Ascenseur à gauche"
+  },
+  "st_elevator_right": {
+    "en": "Elevator on your right",
+    "fr": "Ascenseur à droite"
+  },
+  "st_pillar_ahead": {
+    "en": "Pillar ahead",
+    "fr": "Pilier devant"
+  },
+  "st_pillar_left": {
+    "en": "Pillar on your left",
+    "fr": "Pilier à gauche"
+  },
+  "st_pillar_right": {
+    "en": "Pillar on your right",
+    "fr": "Pilier à droite"
   }
 }

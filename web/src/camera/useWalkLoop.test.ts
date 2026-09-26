@@ -8,6 +8,7 @@ import type { SceneResult, SystemEvent } from "../api/types";
 interface Pending {
   image: string;
   prev: string | null;
+  careful: boolean;
   resolve: (r: SceneResult) => void;
   reject: (e: Error) => void;
 }
@@ -17,12 +18,12 @@ let maxInFlight = 0;
 
 vi.mock("../api/client", () => ({
   analyze: vi.fn(
-    (image: string, prev: string | null) =>
+    (image: string, prev: string | null, _lang?: string, _signal?: AbortSignal, careful?: boolean) =>
       new Promise<SceneResult>((resolve, reject) => {
         inFlight++;
         maxInFlight = Math.max(maxInFlight, inFlight);
         calls.push({
-          image, prev,
+          image, prev, careful: !!careful,
           resolve: (r) => { inFlight--; resolve(r); },
           reject: (e) => { inFlight--; reject(e); },
         });
@@ -47,7 +48,7 @@ vi.mock("./useCamera", () => ({
 }));
 
 let frameN = 0;
-let nextFrame: { brightness: number; contrast: number } = { brightness: 120, contrast: 40 };
+let nextFrame: { brightness: number; contrast: number; sample?: Uint8ClampedArray } = { brightness: 120, contrast: 40 };
 vi.mock("./captureFrame", async (importOriginal) => {
   const real = await importOriginal<typeof import("./captureFrame")>();
   return {
@@ -262,6 +263,109 @@ describe("useWalkLoop", () => {
     calls[0].reject(new Error("offline"));
     await tick();
     expect(answer).toEqual({ ok: false, reason: "no_connection" });
+  });
+
+  it("a picture that has not changed is not sent again until 2.4 s", async () => {
+    nextFrame = { brightness: 120, contrast: 40, sample: new Uint8ClampedArray(8).fill(40) };
+    const { walk } = setup();
+    act(() => { void walk().start(); });
+    await tick();
+    expect(calls).toHaveLength(1);
+    await tick(800);
+    expect(calls).toHaveLength(1);
+    await tick(800);
+    expect(calls).toHaveLength(1);
+    await tick(800);
+    expect(calls).toHaveLength(2);
+  });
+
+  it("What's ahead? sends a photo even when the picture has not changed", async () => {
+    nextFrame = { brightness: 120, contrast: 40, sample: new Uint8ClampedArray(8).fill(40) };
+    const { walk } = setup();
+    act(() => { void walk().start(); });
+    await tick();
+    calls[0].resolve(RESULT);
+    await tick(100);
+    expect(calls).toHaveLength(1);
+    let answer: unknown;
+    act(() => { void walk().checkNow().then((a) => { answer = a; }); });
+    await tick();
+    expect(calls).toHaveLength(2);
+    calls[1].resolve(RESULT);
+    await tick();
+    expect(answer).toEqual({ ok: true, result: RESULT });
+  });
+
+  it("a question does not take the fast photo already in flight", async () => {
+    const { walk, onResult } = setup();
+    act(() => { void walk().start(); });
+    await tick();
+    expect(calls[0].careful).toBe(false);
+    act(() => walk().primeLook());
+    await tick(100);
+    expect(calls).toHaveLength(2);
+    expect(calls[1].careful).toBe(true);
+    let answer: unknown;
+    act(() => { void walk().takeLook().then((a) => { answer = a; }); });
+    calls[0].resolve(RESULT);
+    await tick();
+    expect(answer).toBeUndefined();
+    expect(onResult).toHaveBeenCalledTimes(1);
+    calls[1].resolve({ ...RESULT, summary: "Elevator doors" });
+    await tick();
+    expect(answer).toEqual({ ok: true, result: { ...RESULT, summary: "Elevator doors" } });
+  });
+
+  it("speech starts one look, and the question reuses it", async () => {
+    const { walk, onResult } = setup();
+    act(() => { void walk().start(); });
+    await tick();
+    calls[0].resolve(RESULT);
+    await tick();
+    act(() => walk().setPaused(true));
+    act(() => walk().primeLook());
+    await tick(300);
+    expect(calls).toHaveLength(2);
+    let answer: unknown;
+    act(() => { void walk().takeLook().then((a) => { answer = a; }); });
+    await tick();
+    expect(calls).toHaveLength(2);
+    calls[1].resolve(RESULT);
+    await tick();
+    expect(answer).toEqual({ ok: true, result: RESULT });
+    expect(onResult).toHaveBeenCalledTimes(1);
+  });
+
+  it("speech that was not a question is spoken once", async () => {
+    const { walk, onResult } = setup();
+    act(() => { void walk().start(); });
+    await tick();
+    calls[0].resolve(RESULT);
+    await tick();
+    onResult.mockClear();
+    act(() => walk().setPaused(true));
+    act(() => walk().primeLook());
+    await tick(300);
+    act(() => walk().releaseLook());
+    calls[1].resolve(RESULT);
+    await tick();
+    expect(onResult).toHaveBeenCalledTimes(1);
+  });
+
+  it("a different question drops the extra photo", async () => {
+    const { walk, onResult } = setup();
+    act(() => { void walk().start(); });
+    await tick();
+    calls[0].resolve(RESULT);
+    await tick();
+    onResult.mockClear();
+    act(() => walk().setPaused(true));
+    act(() => walk().primeLook());
+    await tick(300);
+    act(() => walk().dropLook());
+    calls[1].resolve(RESULT);
+    await tick();
+    expect(onResult).not.toHaveBeenCalled();
   });
 
   it("What's ahead? when not walking says stopped", async () => {

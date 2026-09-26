@@ -1,4 +1,4 @@
-"""SeeWalk backend.
+"""VisionCompanion backend.
 
     cd server && .venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
 
@@ -27,7 +27,7 @@ from tts import synthesize
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("seewalk")
 
-app = FastAPI(title="SeeWalk")
+app = FastAPI(title="VisionCompanion")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=config.ALLOWED_ORIGINS or ["*"],
@@ -46,16 +46,18 @@ def health():
 async def analyze(req: AnalyzeRequest):
     start = time.perf_counter()
     try:
-        result = await analyze_frame(req.image, req.lang, req.prev_image)
+        result = await analyze_frame(req.image, req.lang, req.prev_image, req.careful)
     except Exception as e:
         log.warning("analyze failed: %s: %s", type(e).__name__, e)
         raise HTTPException(status_code=503, detail="vision unavailable")
     log.info(
-        "analyze %.0f ms, %d hazards%s %s",
+        "analyze %.0f ms%s, %d hazards%s %s summary=%r",
         (time.perf_counter() - start) * 1000,
+        " careful" if req.careful else "",
         len(result.hazards),
         " (unclear)" if result.unclear else "",
         [f"{h.phrase} {h.confidence:.2f}" for h in result.hazards],
+        (result.summary or "")[:80],
     )
     return result
 
@@ -64,7 +66,7 @@ async def analyze(req: AnalyzeRequest):
 async def tts(req: TTSRequest):
     start = time.perf_counter()
     try:
-        audio = await synthesize(req.text, req.lang)
+        audio = await synthesize(req.text, req.lang, req.voice)
     except Exception as e:
         log.warning("tts failed: %s: %s", type(e).__name__, e)
         raise HTTPException(status_code=503, detail="voice unavailable")

@@ -1,3 +1,4 @@
+import type { VoiceId } from "../audio/voices";
 import type { Lang, ListenResult, SceneResult } from "./types";
 import { mockAnalyze } from "./mock";
 
@@ -10,27 +11,28 @@ export async function analyze(
   prevImage: string | null,
   lang: Lang,
   signal?: AbortSignal,
+  careful = false,
 ): Promise<SceneResult> {
   if (MOCK) return mockAnalyze(lang);
   const r = await fetch(`${BASE}/analyze`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ image, prev_image: prevImage, lang }),
+    body: JSON.stringify({ image, prev_image: prevImage, lang, careful }),
     signal,
   });
   if (!r.ok) throw new Error(`analyze ${r.status}`);
   return r.json();
 }
 
-/** Live speech. Gives up after 2.5 s so a stale alert is never spoken late. */
-export async function tts(text: string, lang: Lang): Promise<ArrayBuffer> {
+/** Live speech in the walker's chosen voice. Gives up after 2.5 s so a stale alert is never spoken late. */
+export async function tts(text: string, lang: Lang, voice: VoiceId = "river", timeoutMs = 2500): Promise<ArrayBuffer> {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 2500);
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const r = await fetch(`${BASE}/tts`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text, lang }),
+      body: JSON.stringify({ text, lang, voice }),
       signal: ctrl.signal,
     });
     if (!r.ok) throw new Error(`tts ${r.status}`);

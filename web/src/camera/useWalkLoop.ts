@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { analyze } from "../api/client";
 import type { Lang, SceneResult, SystemEvent } from "../api/types";
-import { captureFrame, looksCovered } from "./captureFrame";
+import { captureFrame, looksCovered, sceneChanged } from "./captureFrame";
 import { useCamera } from "./useCamera";
 
 // A new snapshot every 0.8 s, up to 2 at Gemini at once (each answer takes ~1.6 s), so the walker
@@ -9,6 +9,8 @@ import { useCamera } from "./useCamera";
 // `|| 800` (not `?? 800`) so an empty VITE_FRAME_INTERVAL_MS= can't become 0 and hammer Gemini
 const INTERVAL_MS = Math.max(500, Number(import.meta.env.VITE_FRAME_INTERVAL_MS) || 800);
 const MAX_IN_FLIGHT = 2;
+// A picture that has not changed is not sent again. A slow creep still gets a look on this timer.
+const SAME_HOLD_MS = 2400;
 const TIMEOUT_MS = 5000;
 const NO_CONN_REPEAT_MS = 20000;
 
@@ -40,7 +42,9 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
   const wakeLock = useRef<WakeLockSentinel | null>(null);
   const cutWaitShort = useRef<(() => void) | null>(null);
   const inFlight = useRef(0);
-  const askers = useRef<((r: CheckResult) => void)[]>([]);
+  const askers = useRef<{ resolve: (r: CheckResult) => void; careful: boolean }[]>([]);
+  // One look started when speech begins, so "what's ahead" does not wait for speech and then a photo.
+  const primed = useRef<Promise<CheckResult> | null>(null);
   const resetFailures = useRef(false);
   // Paused while SeeWalk is answering a question: no background snapshots go to Gemini, so the
   // answer isn't competing with them. "What's ahead?" (checkNow) still works while paused.
@@ -66,17 +70,45 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [camera, keepAwake]);
 
-  /** "What's ahead?": answer with the snapshot in flight, or take one right away. */
+  /** A question passes careful=true so it is not answered by the fast photo already in flight. */
   const checkNow = useCallback(
-    () =>
+    (careful = false) =>
       new Promise<CheckResult>((resolve) => {
         if (!running.current) return resolve({ ok: false, reason: "stopped" });
-        askers.current.push(resolve);
-        if (inFlight.current === 0) cutWaitShort.current?.(); // else the one in flight answers
+        askers.current.push({ resolve, careful });
+        if (inFlight.current === 0 || careful) cutWaitShort.current?.();
 
       }),
     [],
   );
+
+  /** Start a careful look as soon as someone speaks, before the server has heard the words. */
+  const primeLook = useCallback(() => {
+    if (!running.current || primed.current) return;
+    primed.current = checkNow(true);
+  }, [checkNow]);
+
+  /** The careful look started when speech began, or a new careful one if none was started. */
+  const takeLook = useCallback(() => {
+    const pending = primed.current;
+    primed.current = null;
+    return pending ?? checkNow(true);
+  }, [checkNow]);
+
+  /** Speech was not a scene question. Say the photo as a normal alert, once. */
+  const releaseLook = useCallback(() => {
+    const pending = primed.current;
+    if (!pending) return;
+    primed.current = null;
+    void pending.then((r) => {
+      if (r.ok) onResultRef.current(r.result);
+    });
+  }, []);
+
+  /** Speech was a different question. Drop the extra photo so it is not spoken over the answer. */
+  const dropLook = useCallback(() => {
+    primed.current = null;
+  }, []);
 
   const start = useCallback(async () => {
     const gen = ++generation.current;
@@ -102,31 +134,40 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
     // Requests of THIS loop at Gemini. A stopped loop's late answers must not touch a new loop's
     // count, so it's local and mirrored into inFlight (read by checkNow) only while current.
     let flying = 0;
+    let carefulFlying = 0;
     const setFlying = (n: number) => { flying = n; if (generation.current === gen) inFlight.current = n; };
     setFlying(0);
     let sent = 0;            // numbers each snapshot in the order it was taken
     let newestSpoken = 0;    // an answer older than one already handled is dropped
+    let lastSample: Uint8ClampedArray | null = null;
+    let lastSentAt = 0;
 
     // One snapshot → Gemini. Up to MAX_IN_FLIGHT of these overlap, so a fresh look at the path
     // arrives every ~0.8 s even though each answer takes ~1.6 s.
-    const send = async (b64: string) => {
+    const takeAskers = (careful: boolean) => {
+      const mine = askers.current.filter((a) => a.careful === careful);
+      askers.current = askers.current.filter((a) => a.careful !== careful);
+      return mine;
+    };
+
+    const send = async (b64: string, careful: boolean) => {
       const seq = ++sent;
       setFlying(flying + 1);
+      if (careful) carefulFlying += 1;
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+      const timer = setTimeout(() => ctrl.abort(), careful ? 8000 : TIMEOUT_MS);
       try {
-        const result = await analyze(b64, null, langRef.current, ctrl.signal);
+        const result = await analyze(b64, null, langRef.current, ctrl.signal, careful);
         if (!alive()) return; // stopped while we were waiting: drop it
         if (fails >= 2) onSystemRef.current("connection_back");
         fails = 0;
-        const waiting = askers.current.splice(0);
-        if (seq > newestSpoken) {
+        const waiting = takeAskers(careful);
+        // A fast photo can become a street alert. A question photo is spoken by the asker.
+        if (!careful && seq > newestSpoken) {
           newestSpoken = seq;
-          // Anyone who asked while this was in flight gets THIS result (fastest answer) and
-          // speaks it themselves, so the loop doesn't speak it too
           if (waiting.length === 0) onResultRef.current(result);
         }
-        waiting.forEach((resolve) => resolve({ ok: true, result }));
+        waiting.forEach((a) => a.resolve({ ok: true, result }));
       } catch {
         if (!alive()) return;
         fails += 1;
@@ -135,10 +176,11 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
           onSystemRef.current("no_connection");
           lastNoConn = now;
         }
-        // Someone asked: tell them, unless another snapshot is still on its way to answer them
-        if (flying === 1) askers.current.splice(0).forEach((resolve) => resolve({ ok: false, reason: "no_connection" }));
+        // Someone asked: tell them, unless another snapshot of the same kind is still on its way
+        if (careful || flying === 1) takeAskers(careful).forEach((a) => a.resolve({ ok: false, reason: "no_connection" }));
       } finally {
         clearTimeout(timer);
+        if (careful) carefulFlying -= 1;
         setFlying(flying - 1);
       }
     };
@@ -153,9 +195,10 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
       const roundStart = performance.now();
       if (resetFailures.current) { fails = 0; resetFailures.current = false; }
       const asked = askers.current.length > 0;
+      const wantsCareful = askers.current.some((a) => a.careful);
       if (paused.current && !asked) { await sleep(250); continue; }
-      // Full: wait for an answer to come back. A question is answered by the one in flight.
-      if (flying >= MAX_IN_FLIGHT || (asked && flying > 0)) {
+      // Full: wait. A fast photo in flight does not answer a question, so a careful one can still go.
+      if (flying >= MAX_IN_FLIGHT || (wantsCareful && carefulFlying > 0) || (asked && !wantsCareful && flying > 0)) {
         await new Promise((r) => setTimeout(r, 50));
         continue;
       }
@@ -165,10 +208,14 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
       blockedCount = blocked ? blockedCount + 1 : 0;
       if (blockedCount === 2) onSystemRef.current("camera_blocked");
 
-      if (frame && !blocked) {
-        void send(frame.b64);
+      if (blocked) lastSample = null;
+      const sameScene = !!frame?.sample && !!lastSample && !sceneChanged(lastSample, frame.sample) && performance.now() - lastSentAt < SAME_HOLD_MS;
+      if (frame && !blocked && (asked || !sameScene)) {
+        if (frame.sample) lastSample = frame.sample;
+        lastSentAt = performance.now();
+        void send(frame.b64, wantsCareful);
       } else if (blocked) {
-        askers.current.splice(0).forEach((resolve) => resolve({ ok: false, reason: "camera_blocked" }));
+        askers.current.splice(0).forEach((a) => a.resolve({ ok: false, reason: "camera_blocked" }));
       } else if (asked) {
         await new Promise((r) => setTimeout(r, 200)); // camera warming up: don't spin
         continue;
@@ -178,7 +225,7 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
       if (wait > 0 && alive()) await sleep(wait);
     }
     if (generation.current === gen) {
-      askers.current.splice(0).forEach((resolve) => resolve({ ok: false, reason: "stopped" }));
+      askers.current.splice(0).forEach((a) => a.resolve({ ok: false, reason: "stopped" }));
     }
   }, [camera, keepAwake]);
 
@@ -186,15 +233,16 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
     running.current = false;
     generation.current++;
     inFlight.current = 0;
+    primed.current = null;
     cutWaitShort.current?.();
-    askers.current.splice(0).forEach((resolve) => resolve({ ok: false, reason: "stopped" }));
+    askers.current.splice(0).forEach((a) => a.resolve({ ok: false, reason: "stopped" }));
     camera.stop();
     wakeLock.current?.release().catch(() => {});
     wakeLock.current = null;
   }, [camera]);
 
   return useMemo(
-    () => ({ videoRef: camera.videoRef, start, stop, checkNow, setPaused }),
-    [camera.videoRef, start, stop, checkNow, setPaused],
+    () => ({ videoRef: camera.videoRef, start, stop, checkNow, primeLook, takeLook, releaseLook, dropLook, setPaused }),
+    [camera.videoRef, start, stop, checkNow, primeLook, takeLook, releaseLook, dropLook, setPaused],
   );
 }

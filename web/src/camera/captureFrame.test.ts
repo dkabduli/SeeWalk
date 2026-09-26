@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { looksCovered, type Frame } from "./captureFrame";
+import { looksCovered, sceneChanged, type Frame } from "./captureFrame";
 
 const frame = (brightness: number, contrast: number): Frame => ({ b64: "", brightness, contrast, at: 0 });
 
@@ -15,4 +15,20 @@ describe("looksCovered", () => {
   it("normal street scene is not covered", () => expect(looksCovered(frame(120, 45))).toBe(false));
   it("bright blank wall / overcast sky is not covered", () => expect(looksCovered(frame(210, 3))).toBe(false));
   it("dim but detailed scene (shade) is not covered", () => expect(looksCovered(frame(50, 30))).toBe(false));
+});
+
+describe("sceneChanged", () => {
+  const fill = (n: number) => new Uint8ClampedArray(1024).fill(n);
+
+  it("a still picture is the same scene", () => {
+    expect(sceneChanged(fill(80), fill(84))).toBe(false);
+  });
+
+  it("a step forward is a new scene", () => {
+    expect(sceneChanged(fill(80), fill(100))).toBe(true);
+  });
+
+  it("the first picture is always new", () => {
+    expect(sceneChanged(null, fill(80))).toBe(true);
+  });
 });

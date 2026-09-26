@@ -66,7 +66,7 @@ const CustomWebcam = () => {
 
     return (
         <main className="container">
-          <h1>SeeWalk</h1>
+          <h1>VisionCompanion</h1>
             <Webcam
                 audio={false}
                 screenshotFormat="image/jpeg"

@@ -26,7 +26,7 @@
 /* Top bar: wordmark, status, language */
 .walk .bar { display: flex; align-items: center; gap: 10px; min-height: 40px; }
 .walk .brand {
-  margin-right: auto; font-size: 24px; font-weight: 800; letter-spacing: -0.4px;
+  margin-right: auto; font-size: 18px; font-weight: 800; letter-spacing: -0.4px;
   display: inline-flex; align-items: center;
 }
 .walk .brand b { font-weight: 800; }
@@ -39,6 +39,7 @@
   display: inline-flex; align-items: center; gap: 7px;
   font-size: 15px; font-weight: 600; color: var(--muted);
 }
+.walk .listen-for { margin: 0; font-size: 15px; font-weight: 600; color: var(--muted); }
 .walk .status::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
 .walk .status.walking { color: var(--text); }
 .walk .status.walking::before { background: #3ecf6e; }
@@ -142,6 +143,21 @@
   .walk .alert .text { animation: walk-in 0.18s ease-out; }
 }
 @keyframes walk-in { from { opacity: 0.4; } to { opacity: 1; } }
+
+/* Setup: four voices. Tap one to hear "Door ahead" in it. */
+.walk .voices { display: grid; gap: 8px; padding-top: 14px; border-top: 1px solid var(--line); }
+.walk .voices p { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--muted); }
+.walk .voice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.walk .voice-grid button {
+  display: grid; gap: 1px; min-height: 52px; padding: 8px 12px; text-align: left;
+  border-radius: 10px; background: var(--panel); color: var(--text); border: 1px solid var(--line);
+}
+.walk .voice-grid button b { font-size: 16px; font-weight: 800; }
+.walk .voice-grid button small { font-size: 13px; font-weight: 600; color: var(--muted); }
+.walk .voice-grid button.on { color: var(--bg); background: var(--amber); border-color: var(--amber); }
+.walk .voice-grid button.on small { color: var(--bg); }
+.walk .voice-grid button:active { background: #dcdad4; }
+.walk .voice-grid button.on:active { background: var(--amber); }
 
 /* Setup: the voice commands you can use */
 .walk .phrases { display: grid; gap: 8px; padding-top: 14px; border-top: 1px solid var(--line); }

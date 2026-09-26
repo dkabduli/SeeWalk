@@ -44,6 +44,19 @@ describe("SpeechClipper", () => {
     expect(clips).toHaveLength(0);
   });
 
+  it("chimes once the name-length of speech has been heard, then lets the rest finish", () => {
+    const wakes: number[] = [];
+    const clips: Float32Array[] = [];
+    const c = new SpeechClipper(RATE, (clip) => clips.push(clip), () => wakes.push(clips.length));
+    for (let i = 0; i < blocks(0.4); i++) c.push(speech());   // shorter than the name: no chime yet
+    expect(wakes).toHaveLength(0);
+    for (let i = 0; i < blocks(1); i++) c.push(speech());     // they are still talking
+    expect(wakes).toEqual([0]);
+    for (let i = 0; i < blocks(1); i++) c.push(quiet());      // question ends after the chime
+    expect(clips).toHaveLength(1);
+    expect(wakes).toEqual([0]);
+  });
+
   it("cuts long talking into clips of at most 4 s", () => {
     const clips: Float32Array[] = [];
     const c = new SpeechClipper(RATE, (clip) => clips.push(clip));

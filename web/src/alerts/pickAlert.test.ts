@@ -33,11 +33,11 @@ describe("pickAlert", () => {
   });
 
   it("urgent hazards may repeat after 5 s", () => {
-    expect(mod.pickAlert(scene(hz({ type: "stairs_down", urgency: 1 })))).not.toBeNull();
+    expect(mod.pickAlert(scene(hz({ type: "pothole", urgency: 1 })))).not.toBeNull();
     vi.setSystemTime(4000);
-    expect(mod.pickAlert(scene(hz({ type: "stairs_down", urgency: 1 })))).toBeNull();
+    expect(mod.pickAlert(scene(hz({ type: "pothole", urgency: 1 })))).toBeNull();
     vi.setSystemTime(5100);
-    expect(mod.pickAlert(scene(hz({ type: "stairs_down", urgency: 1 })))).not.toBeNull();
+    expect(mod.pickAlert(scene(hz({ type: "pothole", urgency: 1 })))).not.toBeNull();
   });
 
   it("warnings wait 8 s, information (crosswalk, stop sign) 45 s", () => {
@@ -123,16 +123,207 @@ describe("when to say it", () => {
   it("street clips are per direction; other things have none", () => {
     expect(mod.streetClip(hz({ direction: "right" }))).toBe("st_stop_sign_right");
     expect(mod.streetClip(hz({ type: "door" }))).toBe("st_door_ahead");
+    expect(mod.streetClip(hz({ type: "pillar" }))).toBe("st_pillar_ahead");
+    expect(mod.streetClip(hz({ type: "chair", phrase: "Chair ahead" }))).toBeNull();
     expect(mod.streetClip(hz({ type: "person" }))).toBeNull();
   });
 });
 
 describe("streetOnly", () => {
-  it("keeps street hazards and drops people, vehicles and objects", () => {
+  it("keeps street hazards, including a pillar, and drops people, chairs, poles and other objects", () => {
     const r = mod.streetOnly(scene(
       hz({ type: "person", urgency: 2 }), hz({ type: "car" }), hz({ type: "obstacle_in_path", urgency: 2 }),
-      hz({ type: "other" }), hz({ type: "pothole", urgency: 1 }), hz({ type: "stop_sign" }), hz({ type: "curb_or_dropoff" }),
+      hz({ type: "chair", urgency: 2, phrase: "Chair ahead" }), hz({ type: "pole", urgency: 2, phrase: "Pole ahead" }),
+      hz({ type: "other" }), hz({ type: "pothole", urgency: 1 }), hz({ type: "stop_sign" }),
+      hz({ type: "pillar", urgency: 2, phrase: "Pillar ahead" }), hz({ type: "curb_or_dropoff" }),
     ));
-    expect(r.hazards.map((h) => h.type)).toEqual(["pothole", "stop_sign", "curb_or_dropoff"]);
+    expect(r.hazards.map((h) => h.type)).toEqual(["pothole", "stop_sign", "pillar", "curb_or_dropoff"]);
+  });
+
+  it("keeps a door only when it is ahead", () => {
+    const r = mod.streetOnly(scene(
+      hz({ type: "door", direction: "left", phrase: "Door on your left" }),
+      hz({ type: "door_open", phrase: "Open door ahead" }),
+    ));
+    expect(r.hazards.map((h) => h.type)).toEqual(["door_open"]);
+  });
+});
+
+describe("pillar, chair, pole", () => {
+  const pillar = (distance: Hazard["distance"]) =>
+    scene(hz({ type: "pillar", urgency: distance === "close" ? 1 : 2, distance, phrase: "Pillar ahead" }));
+
+  it("a pillar is said only when a second look still shows it, then not again up close", () => {
+    expect(mod.pickAlert(pillar("near"))).toBeNull();
+    expect(mod.pickAlert(pillar("near"))?.phrase).toBe("Pillar ahead");
+    vi.setSystemTime(3000);
+    expect(mod.pickAlert(pillar("close"))).toBeNull();
+    vi.setSystemTime(8000);
+    expect(mod.pickAlert(pillar("near"))).toBeNull();
+    vi.setSystemTime(21_000);
+    expect(mod.pickAlert(pillar("near"))).toBeNull();
+    vi.setSystemTime(22_000);
+    expect(mod.pickAlert(pillar("near"))).not.toBeNull();
+  });
+
+  it("a single pillar look, or one after a gap, stays quiet", () => {
+    expect(mod.pickAlert(pillar("near"))).toBeNull();
+    vi.setSystemTime(5000);
+    expect(mod.pickAlert(pillar("near"))).toBeNull();
+    vi.setSystemTime(6000);
+    expect(mod.pickAlert(pillar("near"))).not.toBeNull();
+  });
+
+  it("a doubtful pillar is not announced", () => {
+    const weak = scene(hz({ type: "pillar", confidence: 0.7, phrase: "Pillar ahead" }));
+    expect(mod.pickAlert(weak)).toBeNull();
+    expect(mod.pickAlert(weak)).toBeNull();
+  });
+
+  it("stairs are said once, then once when close, and a direction change is not a new stair", () => {
+    expect(mod.pickAlert(scene(hz({ type: "stairs_down", urgency: 2, direction: "right", phrase: "Stairs on your right" })))?.phrase).toBe("Stairs on your right");
+    expect(mod.pickAlert(scene(hz({ type: "stairs_down", urgency: 2, direction: "ahead", phrase: "Stairs ahead" })))).toBeNull();
+    vi.setSystemTime(3000);
+    expect(mod.pickAlert(scene(hz({ type: "stairs_down", urgency: 1, distance: "close", phrase: "Stairs ahead" })))).not.toBeNull();
+    vi.setSystemTime(8000);
+    expect(mod.pickAlert(scene(hz({ type: "stairs_down", urgency: 1, distance: "close", phrase: "Stairs ahead" })))).toBeNull();
+    vi.setSystemTime(23000);
+    expect(mod.pickAlert(scene(hz({ type: "stairs_down", urgency: 2, phrase: "Stairs ahead" })))).not.toBeNull();
+  });
+
+  it("a drop-off is not announced in the same breath as stairs", () => {
+    const pick = mod.pickAlert(scene(
+      hz({ type: "stairs_down", urgency: 1, phrase: "Stairs ahead" }),
+      hz({ type: "curb_or_dropoff", urgency: 1, direction: "right", phrase: "Drop-off on your right" }),
+    ));
+    expect(pick?.type).toBe("stairs_down");
+    vi.setSystemTime(2000);
+    expect(mod.pickAlert(scene(hz({ type: "curb_or_dropoff", urgency: 1, phrase: "Drop-off ahead" })))).toBeNull();
+  });
+
+  it("a closed door that opens within 8 s is door opening, and a side door stays quiet", () => {
+    const closed = scene(hz({ type: "door", urgency: 2, phrase: "Door ahead" }));
+    expect(mod.pickAlert(mod.streetOnly(mod.noticeDoors(closed)))?.type).toBe("door");
+    vi.setSystemTime(3000);
+    const open = scene(hz({ type: "door_open", urgency: 2, phrase: "Open door ahead" }));
+    const swing = mod.noticeDoors(open);
+    expect(swing.hazards[0].type).toBe("door_opening");
+    expect(mod.pickAlert(mod.streetOnly(swing))?.type).toBe("door_opening");
+    vi.setSystemTime(4000);
+    const side = mod.streetOnly(mod.noticeDoors(scene(hz({ type: "door", direction: "left", phrase: "Door on your left" }))));
+    expect(mod.pickAlert(side)).toBeNull();
+  });
+
+  it("a door is said once, not again while you are still walking through it", () => {
+    const door = (distance: Hazard["distance"]) =>
+      scene(hz({ type: "door", urgency: distance === "close" ? 1 : 2, distance, phrase: "Door ahead" }));
+    expect(mod.pickAlert(mod.streetOnly(mod.noticeDoors(door("near"))))?.type).toBe("door");
+    vi.setSystemTime(3000);
+    expect(mod.pickAlert(mod.streetOnly(mod.noticeDoors(door("close"))))).toBeNull();
+    vi.setSystemTime(25000);
+    expect(mod.pickAlert(mod.streetOnly(mod.noticeDoors(door("close"))))).toBeNull();
+    vi.setSystemTime(26000);
+    mod.noticeDoors(scene());
+    vi.setSystemTime(31000);
+    mod.noticeDoors(scene());
+    expect(mod.pickAlert(mod.streetOnly(mod.noticeDoors(door("near"))))).not.toBeNull();
+  });
+
+  it("elevator doors said as a door become an elevator, and a side one stays quiet", () => {
+    const seen = mod.noticeDoors({
+      hazards: [hz({ type: "door", urgency: 2, phrase: "Door ahead" })],
+      unclear: false,
+      summary: "Elevator call buttons",
+    });
+    expect(seen.hazards[0].type).toBe("elevator");
+    expect(mod.pickAlert(mod.streetOnly(seen))?.phrase).toBe("Elevator ahead");
+    const side = mod.streetOnly(scene(hz({ type: "elevator", direction: "left", phrase: "Elevator on your left" })));
+    expect(side.hazards).toEqual([]);
+  });
+
+  it("a pillar to the side is not a street alert", () => {
+    const side = mod.streetOnly(scene(hz({ type: "pillar", urgency: 2, direction: "left", phrase: "Pillar on your left" })));
+    expect(mod.pickAlert(side)).toBeNull();
+    expect(mod.pickAlert(side)).toBeNull();
+  });
+
+  it("a chair or a thin pole is never a street alert", () => {
+    expect(mod.pickAlert(mod.streetOnly(scene(hz({ type: "chair", urgency: 1, distance: "close", phrase: "Chair ahead" }))))).toBeNull();
+    expect(mod.pickAlert(mod.streetOnly(scene(hz({ type: "pole", urgency: 1, distance: "close", phrase: "Pole ahead" }))))).toBeNull();
+  });
+});
+
+describe("questions use the same look", () => {
+  it("what's ahead leads with the hazard, then the rest of the scene", () => {
+    const text = mod.describeAhead({
+      hazards: [hz({ type: "pothole", urgency: 2, phrase: "Pothole ahead" })],
+      unclear: false,
+      summary: "Chairs along the wall",
+    });
+    expect(text.startsWith("Pothole ahead")).toBe(true);
+    expect(text).toContain("Chairs along the wall");
+  });
+
+  it("what's ahead does not repeat a hazard the summary already restates", () => {
+    const text = mod.describeAhead({
+      hazards: [hz({ type: "pothole", urgency: 2, phrase: "Pothole ahead" })],
+      unclear: false,
+      summary: "Pothole on the path",
+    });
+    expect(text).toBe("Pothole ahead");
+  });
+
+  it("what's ahead names an elevator instead of calling it a door", () => {
+    const text = mod.describeAhead(mod.noticeDoors({
+      hazards: [hz({ type: "door", urgency: 2, phrase: "Door ahead" })],
+      unclear: false,
+      summary: "Elevator at the end of the hall",
+    }));
+    expect(text.startsWith("Elevator ahead")).toBe(true);
+  });
+
+  it("what's ahead keeps the scene when the only hazard is a person", () => {
+    const text = mod.describeAhead({
+      hazards: [hz({ type: "person", urgency: 2, phrase: "Person ahead" })],
+      unclear: false,
+      summary: "Fountain and red couches",
+    });
+    expect(text).toBe("Fountain and red couches");
+    expect(text).not.toContain("Person");
+  });
+
+  it("what's ahead with no hazard is the scene summary", () => {
+    expect(mod.describeAhead({ hazards: [], unclear: false, summary: "Laptop on a table" })).toBe("Laptop on a table");
+  });
+
+  it("what's in the way names a chair and a pole, and skips a stop sign", () => {
+    const text = mod.describePath(scene(
+      hz({ type: "stop_sign", phrase: "Stop sign ahead" }),
+      hz({ type: "chair", urgency: 2, phrase: "Chair ahead" }),
+      hz({ type: "pole", urgency: 2, direction: "right", phrase: "Pole on your right" }),
+    ));
+    expect(text).toContain("Chair ahead");
+    expect(text).toContain("Pole on your right");
+    expect(text).not.toContain("Stop sign");
+  });
+
+  it("what's in the way is empty when the only thing ahead is a sign", () => {
+    expect(mod.describePath(scene(hz({ phrase: "Stop sign ahead" })))).toBe("");
+  });
+
+  it("a sign the question did not mention is still announced", () => {
+    const r = scene(
+      hz({ type: "stop_sign", phrase: "Stop sign ahead" }),
+      hz({ type: "chair", urgency: 2, phrase: "Chair ahead" }),
+    );
+    mod.noteSpoken(r, mod.describePath(r));
+    expect(mod.pickAlert(scene(hz({ phrase: "Stop sign ahead" })))).not.toBeNull();
+  });
+
+  it("answering counts as saying the street hazard, and the close warning still comes", () => {
+    mod.noteSpoken(scene(hz({ type: "pothole", urgency: 2, distance: "near", phrase: "Pothole ahead" })), "Pothole ahead");
+    expect(mod.pickAlert(scene(hz({ type: "pothole", urgency: 2, distance: "near", phrase: "Pothole ahead" })))).toBeNull();
+    vi.setSystemTime(3000);
+    expect(mod.pickAlert(scene(hz({ type: "pothole", urgency: 1, distance: "close", phrase: "Pothole ahead" })))).not.toBeNull();
   });
 });

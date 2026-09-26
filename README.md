@@ -1,8 +1,8 @@
-# SeeWalk
+# VisionCompanion
 
-**A white cane finds the ground. SeeWalk finds everything else.** People, bikes, cars, potholes and branches at head height are announced calmly, and only when it matters.
+**A white cane finds the ground. VisionCompanion finds everything else.** People, bikes, cars, potholes and branches at head height are announced calmly, and only when it matters.
 
-SeeWalk runs on a phone worn on a lanyard or chest strap. It watches the path ahead with the rear camera, uses **Gemini** to understand the scene, and speaks short alerts in an **ElevenLabs** voice (English or French) through open-ear Bluetooth headphones.
+VisionCompanion runs on a phone worn on a lanyard or chest strap. It watches the path ahead with the rear camera, uses **Gemini** to understand the scene, and speaks short alerts in an **ElevenLabs** voice (English or French) through open-ear Bluetooth headphones.
 
 > Built by team **Goobers** for Hack the Hill III (uOttawa, Sept 25–27, 2026). Original product spec: [`SEEWALK_SPEC.md`](SEEWALK_SPEC.md). Where the two differ, **this README is the current plan**.
 
@@ -13,22 +13,22 @@ SeeWalk runs on a phone worn on a lanyard or chest strap. It watches the path ah
 ```mermaid
 flowchart LR
     A["📷 Camera<br/><small>phone takes a photo</small>"] -- photo --> B["Gemini<br/><small>sees the hazards</small>"]
-    B -- hazards --> C["SeeWalk<br/><small>picks what matters</small>"]
+    B -- hazards --> C["VisionCompanion<br/><small>picks what matters</small>"]
     C -- what to say --> D["ElevenLabs<br/><small>turns it into a voice</small>"]
     D -- voice --> E["🎧 Headphones<br/><small>walker hears it</small>"]
 ```
 
 ### How the pieces talk (Gemini, ElevenLabs, Tiger Data)
 
-![How SeeWalk works: the phone sends snapshots to the server, Gemini returns hazards, the phone plays River's pre-recorded ElevenLabs clip; questions go through Gemini and ElevenLabs Flash live; Tiger Data hazard map planned](docs/img/how-it-works.svg)
+![How VisionCompanion works: the phone sends snapshots to the server, Gemini returns hazards, the phone plays River's pre-recorded ElevenLabs clip; questions go through Gemini and ElevenLabs Flash live; Tiger Data hazard map planned](docs/img/how-it-works.svg)
 
 Regenerate after changing the flow: `python3 docs/img/make_how_it_works.py`. **Tiger Data is not set up yet** (planned hazard map, shown greyed out).
 
 ### 3D model
 
-[![SeeWalk signal path in 3D: Camera → Gemini → SeeWalk → ElevenLabs → Headphones](docs/img/signal-path-3d.png)](https://raw.githack.com/dkabduli/SeeWalk/main/docs/signal-path-3d.html)
+[![VisionCompanion signal path in 3D: Camera → Gemini → VisionCompanion → ElevenLabs → Headphones](docs/img/signal-path-3d.png)](https://raw.githack.com/dkabduli/VisionCompanion/main/docs/signal-path-3d.html)
 
-**[🦯 Open the 3D model →](https://raw.githack.com/dkabduli/SeeWalk/main/docs/signal-path-3d.html)**
+**[🦯 Open the 3D model →](https://raw.githack.com/dkabduli/VisionCompanion/main/docs/signal-path-3d.html)**
 
 Drag to turn, scroll to zoom. Source: [`docs/signal-path-3d.html`](docs/signal-path-3d.html).
 
@@ -226,7 +226,7 @@ Snapshot in → Gemini → hazards out (`/analyze`); phrase in → ElevenLabs �
 Turn the live iPhone camera into a steady stream of snapshots and report when things break.
 - [ ] `types.ts` + `client.ts` pushed early; a mock API for testing without the backend
 - [ ] `captureFrame` (768 px JPEG + brightness), `useCamera` (portrait, lanyard), `useWalkLoop` (one request in flight, 5 s timeout, previous frame included, `checkNow()` for "What's ahead?")
-- [ ] Hands-free **"SeeWalk, what's ahead?" voice command** (our own mic capture → `POST /listen` → Gemini); tested with Bluetooth headphones
+- [ ] Hands-free **"VisionCompanion, what's ahead?" voice command** (our own mic capture → `POST /listen` → Gemini); tested with Bluetooth headphones
 - [x] Stretch: COCO-SSD fast layer (on-device person/bike/car, ~25–30 ms/check, approach tracking)
 - [ ] `no_connection` / `connection_back` / `camera_blocked` events; screen stays awake
 - [ ] Also: share keys privately, **enable Gemini billing before filming**, merge PRs

@@ -12,6 +12,7 @@ const PRE_ROLL_S = 0.4;      // keep a little audio from before the speech start
 const MAX_CLIP_S = 4;        // longest clip we send
 const END_SILENCE_S = 0.7;   // this much quiet ends a clip
 const MIN_SPEECH_S = 0.35;   // shorter bursts (a cough, a door) are ignored
+const WAKE_ACK_S = 0.55;     // this much speech → the "I heard the name" chime, then they finish
 
 /** Splits a live mic signal into speech clips using its loudness (voice activity detection).
  *  Pure logic, so it's unit-tested without a microphone. */
@@ -23,12 +24,15 @@ export class SpeechClipper {
   private recLen = 0;
   private loudLen = 0;
   private quietLen = 0;
+  private acked = false;
   private readonly rate: number;
   private readonly onClip: (clip: Float32Array) => void;
+  private readonly onWake: (() => void) | undefined;
 
-  constructor(rate: number, onClip: (clip: Float32Array) => void) {
+  constructor(rate: number, onClip: (clip: Float32Array) => void, onWake?: () => void) {
     this.rate = rate;
     this.onClip = onClip;
+    this.onWake = onWake;
   }
 
   /** Throw away anything recorded so far (e.g. SeeWalk itself was talking). */
@@ -39,6 +43,7 @@ export class SpeechClipper {
     this.recLen = 0;
     this.loudLen = 0;
     this.quietLen = 0;
+    this.acked = false;
   }
 
   push(buf: Float32Array) {
@@ -70,6 +75,10 @@ export class SpeechClipper {
     if (loud) {
       this.loudLen += buf.length;
       this.quietLen = 0;
+      if (!this.acked && this.loudLen >= WAKE_ACK_S * this.rate) {
+        this.acked = true;
+        this.onWake?.();
+      }
     } else {
       this.quietLen += buf.length;
     }
@@ -80,6 +89,7 @@ export class SpeechClipper {
       this.recLen = 0;
       this.loudLen = 0;
       this.quietLen = 0;
+      this.acked = false;
       if (enough) this.onClip(clip);
     }
   }
@@ -143,12 +153,16 @@ interface Session { active: boolean; stop: () => void }
 /** onCommand: called with the recognised command (intent !== "none").
  *  onDebug (optional): reports what was heard, errors and state, for testing on the phone.
  *  getFrame (optional): the current camera frame (base64 JPEG), sent with each clip.
- *  onChecking (optional): true while a clip is being checked by the server, false after. */
+ *  onChecking (optional): true while a clip is being checked by the server, false after.
+ *  onNoCommand (optional): the clip was speech, but not a command.
+ *  onWake (optional): speech has lasted long enough to be the name; the rest of the question follows. */
 export function createVoiceCommand(
   onCommand: (command: ListenResult) => void,
   onDebug?: (msg: string) => void,
   getFrame?: () => string | null,
   onChecking?: (checking: boolean) => void,
+  onNoCommand?: () => void,
+  onWake?: () => void,
 ) {
   const supported =
     typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia && typeof AudioContext !== "undefined";
@@ -226,11 +240,13 @@ export function createVoiceCommand(
           if (r.intent !== "none" && Date.now() - lastFired > 3000) { // one question → one answer
             lastFired = Date.now();
             onCommand(r);
+          } else if (r.intent === "none") {
+            onNoCommand?.();
           }
         })
         .catch((e: Error) => onDebug?.(`error: ${e.message}`))
         .finally(() => { checking = false; onChecking?.(false); });
-    });
+    }, onWake);
 
     clipperRef = clipper;
     proc.onaudioprocess = (e) => {

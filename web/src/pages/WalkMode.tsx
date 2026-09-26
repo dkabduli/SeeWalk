@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { MOCK, tts } from "../api/client";
 import type { Hazard, Lang, ListenResult, SceneResult, SystemEvent } from "../api/types";
-import { fallbackClip, panFor, pickAlert, streetClip, streetOnly } from "../alerts/pickAlert";
+import { nextIdleLine } from "../alerts/idle";
+import { WalkMemory, withAside } from "../alerts/memory";
+import { describeAhead, describePath, fallbackClip, noteSpoken, noticeDoors, panFor, pickAlert, streetClip, streetOnly } from "../alerts/pickAlert";
 import { audio } from "../audio/AudioEngine";
 import clips from "../audio/clips.json";
+import { loadVoice, saveVoice, VOICES, type VoiceId } from "../audio/voices";
 import { captureFrame } from "../camera/captureFrame";
 import { useWalkLoop } from "../camera/useWalkLoop";
 import { createVoiceCommand } from "../camera/voiceCommand";
@@ -31,18 +34,18 @@ const PEOPLE_ALERTS = false;
 
 // The spoken introduction (the voice commands) plays on the first Start on this phone only;
 // after that Start just says "Walk mode on". Storage can be unavailable: then it always plays.
-const INTRO_KEY = "seewalk.introPlayed";
+const INTRO_KEY = "visioncompanion.introPlayed";
 const introPlayed = () => { try { return localStorage.getItem(INTRO_KEY) === "1"; } catch { return false; } };
 const markIntroPlayed = () => { try { localStorage.setItem(INTRO_KEY, "1"); } catch { /* private mode */ } };
 
 export default function WalkMode() {
   const [lang, setLang] = useState<Lang>("en");
+  const [voice, setVoice] = useState<VoiceId>(loadVoice);
   const [walking, setWalking] = useState(false);
   const [shown, setShown] = useState<Shown | null>(null);
   const [status, setStatus] = useState<Status>("idle");
-  // Street alerts: Gemini's potholes, curbs, stairs, work zones and signs are announced without
-  // being asked. People, chairs and other objects are not (in testing they flooded the screen);
-  // the walker asks for those ("SeeWalk, what's blocking my path?").
+  // Street alerts: holes, edges, steps, doors and pillars in the corridor, signs, work zones.
+  // A chair or a thin pole stays quiet until the walker asks.
   const [autoAlerts, setAutoAlerts] = useState(true);
   // Siri-style indicator: "listening" while a spoken clip is checked, "thinking" while an answer
   // is prepared. Blind users get the same information as sound (a chirp, then a soft pulse).
@@ -58,6 +61,12 @@ export default function WalkMode() {
   // Set while a spoken question is being checked (checkingVoice) or answered (answering count)
   const checkingVoice = useRef(false);
   const answering = useRef(0);
+  const memory = useRef(new WalkMemory());
+  const quietSince = useRef(Date.now());
+  const lastIdleAt = useRef(0);
+  const lastIdleLine = useRef("");
+  const sayIdleRef = useRef<(text: string) => void>(() => {});
+  const langRef = useRef(lang);
 
   const speak = useCallback(async (h: Hazard, asked = false) => {
     const interrupt = h.urgency === 1 || asked;
@@ -67,6 +76,9 @@ export default function WalkMode() {
     speaking.current = true;
     audio.stop();
     log("say", `${h.phrase} (${h.type}/${h.direction}/${h.distance} u${h.urgency}${asked ? ", asked" : ""})`);
+    memory.current.add(h.phrase);
+    quietSince.current = Date.now();
+    lastIdleLine.current = "";
     try {
       const pan = panFor(h);
       // Street alerts play a pre-recorded clip ("Stop sign on your right"): instant, no ~0.4 s wait
@@ -88,7 +100,7 @@ export default function WalkMode() {
         return;
       }
       try {
-        const mp3 = await tts(h.phrase, lang);   // gives up after 2.5 s: never speak a stale alert
+        const mp3 = await tts(h.phrase, lang, voice);   // gives up after 2.5 s: never speak a stale alert
         if (!current()) return;
         await audio.playSpeech(mp3, pan);
       } catch {
@@ -97,13 +109,24 @@ export default function WalkMode() {
     } finally {
       if (current()) speaking.current = false;
     }
-  }, [lang]);
+  }, [lang, voice]);
 
   const onResult = useCallback((r: SceneResult) => {
+    memory.current.remember(r);
     if (!autoAlertsRef.current) return;          // voice-only mode: stay quiet unless asked
     if (answering.current > 0) return;           // never talk over an answer
-    const h = pickAlert(streetOnly(r));
-    if (h) speak(h);
+    const scene = noticeDoors(r);
+    const h = pickAlert(streetOnly(scene));
+    if (h) {
+      speak(h);
+      return;
+    }
+    if (answering.current > 0 || speaking.current || audio.busy) return;
+    const line = nextIdleLine(Date.now(), quietSince.current, lastIdleAt.current, lastIdleLine.current, scene.summary ?? "", langRef.current);
+    if (!line) return;
+    lastIdleAt.current = Date.now();
+    lastIdleLine.current = line;
+    sayIdleRef.current(line);
   }, [speak]);
 
   const onSystem = useCallback(async (e: SystemEvent) => {
@@ -123,7 +146,6 @@ export default function WalkMode() {
   // Fast layer (Abdul): on-device person/bike/car warnings into the same onResult. Switched off
   // with street alerts (it only announces people and vehicles); flip PEOPLE_ALERTS to bring it back.
   // The model is downloaded as soon as this screen opens (it took ~19 s cold).
-  const langRef = useRef(lang);
   const onResultRef = useRef(onResult);
   useLayoutEffect(() => { langRef.current = lang; onResultRef.current = onResult; });
   const fastStop = useRef<(() => void) | null>(null);
@@ -147,14 +169,14 @@ export default function WalkMode() {
     }
   }
 
-  /** Say a free-form answer (from Gemini) in River's live voice; "Sorry, I can't tell" if empty. */
+  /** Say a free-form answer in the walker's chosen voice; "Sorry, I can't tell" if empty. */
   const sayAnswer = useCallback(async (text: string, kind: string) => {
     const id = ++speechId.current;
     log("say", `${text || "(no answer)"} (${kind}, asked)`);
     if (text) {
       setShown({ text, level: "info" });
       try {
-        const mp3 = await tts(text, lang);
+        const mp3 = await tts(text, lang, voice);
         if (speechId.current === id) await audio.playSpeech(mp3, 0);
         return;
       } catch { /* live voice failed: fall through */ }
@@ -162,7 +184,8 @@ export default function WalkMode() {
     if (speechId.current !== id) return;
     setShown({ text: lang === "fr" ? "Désolé, je ne peux pas le dire" : "Sorry, I can't tell", level: "info" });
     await audio.playClip(lang, "not_sure");
-  }, [lang]);
+  }, [lang, voice]);
+  sayIdleRef.current = (text) => { void sayAnswer(text, "idle"); };
 
   // While a question is being checked or answered, everything else waits: no background
   // snapshots to Gemini, no automatic alerts, no new listening. Then it all resumes.
@@ -203,9 +226,17 @@ export default function WalkMode() {
         (checking) => {
           checkingVoice.current = checking;
           updatePause();
-          if (checking) audio.playHeard();       // "got it": speech picked up, checking it
+          if (checking) {
+            audio.playDone();                     // question finished: falling chime, then the answer
+            audio.startWorking();                 // alert only if this wait runs past 3 seconds
+            walkRef.current?.primeLook();         // the photo starts now, while the words are still being heard
+          } else if (answering.current === 0) {
+            audio.stopWorking();
+          }
           refreshBusy();
         },
+        () => walkRef.current?.releaseLook(),    // not a command: speak that photo as a normal alert
+        () => audio.playWake(),                  // name heard: louder rising chime, they keep talking
       );
       audio.onSounding = (on) => voice.setSpeaking(on);
       voiceRef.current = voice;
@@ -236,9 +267,13 @@ export default function WalkMode() {
     getVoice().start(lang);                      // mic permission prompt on first use
     walk.start();                                // runs until Stop, don't await; camera prompt on first use
     if (autoAlerts) void startFast(++fastGen.current);
+    quietSince.current = Date.now();
+    lastIdleAt.current = 0;
+    lastIdleLine.current = "";
     log("info", `started (${lang}${MOCK ? ", MOCK" : ""})`);
     setWalking(true);
     setStatus("walking");
+    audio.setVoice(voice);
     await unlocking;
     await audio.preload(lang, (k) => !k.startsWith("st_")); // start, intro, system messages first
     void audio.preload(lang);                    // then the street clips, while the intro plays
@@ -252,28 +287,31 @@ export default function WalkMode() {
     }
   }
 
-  async function whatsAhead() {
-    if (!walking) return;
-    log("ask", "What's ahead? (tap)");
+  /** Tap and "SeeWalk, what's ahead / what's blocking my path?" share this look, so they can't disagree
+   *  with a street alert from the same photo. */
+  async function answerFromScene(kind: "whats_ahead" | "path") {
     await answeringQuestion(async () => {
-      const answer = await walk.checkNow();      // the snapshot in flight, or a new one now
+      const answer = await walk.takeLook();      // the photo started when speech began, or a new one now
       if (!answer.ok) {
         if (answer.reason === "stopped") return;
         setShown({ text: strings[lang][answer.reason === "no_connection" ? "noConn" : "blocked"], level: "system" });
         await audio.playClip(lang, answer.reason); // "No connection…" or "Camera blocked"
         return;
       }
-      const r = answer.result;
+      const r = noticeDoors(answer.result);
+      memory.current.remember(r);
       if (r.unclear) {
         setShown({ text: lang === "fr" ? "Incertain" : "Unclear", level: "info" });
         await audio.playClip(lang, "unclear");
         return;
       }
-      // Describe the scene ("Laptop and a cup on a table"), not hazard labels ("Person ahead")
-      const summary = r.summary?.trim();
-      if (summary) return sayAnswer(summary, "whats_ahead");
-      const h = pickAlert(r, { ignoreRepeat: true });
-      if (h) return sayAnswer(h.phrase, "whats_ahead");
+      const lead = kind === "path" ? describePath(r) : describeAhead(r);
+      const text = kind === "path" ? lead : withAside(lead, memory.current.aside(lead, lang));
+      noteSpoken(r, text); // street hazards named in the answer don't play again a second later
+      if (text) return sayAnswer(text, kind);
+      if (kind === "path") {
+        return sayAnswer(lang === "fr" ? "Rien de détecté sur votre chemin" : "Nothing detected in your path", kind);
+      }
       // Never answer a question with silence, but never promise "safe" or "clear" either
       setShown({ text: lang === "fr" ? "Rien de détecté" : "Nothing detected", level: "info" });
       log("say", "Nothing detected (asked)");
@@ -281,9 +319,45 @@ export default function WalkMode() {
     });
   }
 
+  async function pickVoice(id: VoiceId) {
+    setVoice(id);
+    saveVoice(id);
+    audio.setVoice(id);
+    await audio.unlock();
+    // One street line, so the walker hears this voice before the walk. The clip if we have it
+    // (the same recording the alerts use); otherwise a live reading in this voice.
+    const sample = "st_door_ahead";
+    await audio.preload(lang, (k) => k === sample);
+    if (audio.hasClip(lang, sample)) {
+      await audio.playClip(lang, sample);
+      return;
+    }
+    try {
+      const mp3 = await tts(lang === "fr" ? "Porte devant" : "Door ahead", lang, id, 6000);
+      await audio.playSpeech(mp3, 0);
+    } catch { /* the walk still uses this voice */ }
+  }
+
+  async function whatsAhead() {
+    if (!walking) return;
+    log("ask", "What's ahead? (tap)");
+    await answerFromScene("whats_ahead");
+  }
+
   async function onVoice(c: ListenResult) {
     if (!walking) return;
     log("ask", `voice: ${c.intent}`);
+    if (c.intent === "where") {
+      walk.dropLook();                           // the last 30 seconds already have it; no second photo
+      const text = memory.current.where(c.heard, lang);
+      await answeringQuestion(async () => { await sayAnswer(text, "where"); });
+      return;
+    }
+    if (c.intent === "whats_ahead" || c.intent === "path") {
+      await answerFromScene(c.intent);
+      return;
+    }
+    walk.dropLook();                             // holding / read / cross: don't speak the extra photo over the answer
     await answeringQuestion(async () => {
       if (c.intent === "cross") {
         // Never tells anyone it's safe to cross (spec). Fixed, pre-made answer.
@@ -292,8 +366,7 @@ export default function WalkMode() {
         await audio.playClip(lang, "cross_refusal");
         return;
       }
-      // whats_ahead / holding / path / read: Gemini answered from the frame taken as you finished
-      // speaking ("A table with a laptop and a cup, a chair on your left")
+      // holding / read: Gemini answered from the frame taken as you finished speaking
       await sayAnswer(c.answer, c.intent);
     });
   }
@@ -325,11 +398,12 @@ export default function WalkMode() {
   return (
     <main className={`walk ${walking ? "is-walking" : "is-idle"}`}>
       <header className="bar">
-        <span className="brand" aria-label="SeeWalk">See<b>Walk</b></span>
+        <span className="brand" aria-label="VisionCompanion">Vision<b>Companion</b></span>
         {MOCK && <span className="mock">MOCK</span>}
         <span className={`status ${status}`} role="status">{t[status]}</span>
         <button className="lang" onClick={switchLang} lang={lang === "en" ? "fr" : "en"}>{t.lang}</button>
       </header>
+      {walking && <p className="listen-for">{t.listening}</p>}
 
       <div className="viewfinder">
         <video ref={videoRef} playsInline muted autoPlay aria-hidden="true" />
@@ -357,6 +431,22 @@ export default function WalkMode() {
               <li>{t.cmdPath}</li>
               <li>{t.cmdRead}</li>
             </ul>
+          </div>
+          <div className="voices">
+            <p>{t.voice}</p>
+            <div className="voice-grid">
+              {VOICES.map((v) => (
+                <button
+                  key={v.id}
+                  className={voice === v.id ? "on" : ""}
+                  aria-pressed={voice === v.id}
+                  onClick={() => pickVoice(v.id)}
+                >
+                  <b>{v.name}</b>
+                  <small>{v.place[lang]}</small>
+                </button>
+              ))}
+            </div>
           </div>
           <div className="setting">
             <span>{t.autoLabel}</span>

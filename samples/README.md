@@ -8,19 +8,19 @@ The first 8 are at night; the `day_…` ones are daylight (what the demo is film
 |---|---|---|---|
 | `stop_sign_crosswalk_1.jpg` | Bilingual ARRÊT/STOP sign on a pole, painted crosswalk in front | `stop_sign` ahead/right, `crosswalk` ahead | anything "safe to cross" |
 | `stop_sign_crosswalk_2.jpg` | Same corner, wider: stop sign, crosswalk, traffic cones down the road, bin on the sidewalk | `stop_sign`, `crosswalk` ahead | cones far down the road as in-path obstacles |
-| `yield_sign_hydrant_crosswalk.jpg` | Yield sign, lamppost and fire hydrant on the corner, crosswalk edge | `crosswalk` and/or `curb_or_dropoff`; lamppost/hydrant as `obstacle_in_path` only if in the walking line | the street-name sign as a hazard |
+| `yield_sign_hydrant_crosswalk.jpg` | Yield sign, lamppost and fire hydrant on the corner, crosswalk edge | `crosswalk` and/or `curb_or_dropoff`; a `pole` only if its base is in the walking line | the yield sign as a stop sign; the hydrant on the grass as an obstacle |
 | `bins_obstacle_in_path.jpg` | Row of three garbage/recycling bins blocking the sidewalk | `obstacle_in_path` ahead, close/near | |
 | `hydrant_cracked_sidewalk.jpg` | Fire hydrant on the grass beside the sidewalk, crack in the pavement | `uneven_surface` (crack) at most; hydrant is off the path | hydrant as in-path obstacle |
-| `lamppost_sign_sidewalk.jpg` | Lamppost and parking sign on the grass edge of a sidewalk | nothing, or a low-urgency edge obstacle | anything urgent |
+| `lamppost_sign_sidewalk.jpg` | Lamppost and parking sign on the grass edge of a sidewalk | nothing (the post is beside the path) | `pillar`, or the lamp post as a hazard |
 | `blurry_sign_closeup.jpg` | Blurry close-up of a parking sign | `unclear: true` or nothing | invented hazards |
 | `indoor_menu_board.jpg` | Restaurant menu TV, indoors (negative control) | nothing | any hazard |
 | `day_bike_rack_parked_bikes_sidewalk.jpg` | Metal bike rack right in front, parked bikes along the sidewalk | `obstacle_in_path` ahead, close (the rack) | a bike **approaching** (they're parked: `approaching: false`) |
 | `day_parked_ebike_curb_street.jpg` | Parked e-bike at a rack on the curb, street beyond | parked bike as an obstacle, close; possibly `curb_or_dropoff` ahead | bike approaching; the distant parked car or cones as hazards |
-| `day_door_button_post_glass_door.jpg` | Accessible-door button post directly in front of a glass door (photographer's reflection) | `obstacle_in_path` ahead, close (the post) | the reflection as a person approaching |
-| `day_closed_glass_door.jpg` | Closed glass door ("Tirez / Pull") filling the view | `other` / `obstacle_in_path`: a closed door ahead (glass is easy to walk into) | "clear" or nothing |
-| `day_indoor_pillar_sign_stairs_up.jpg` | Wayfinding sign on a pillar right ahead, stairs going **up** in the background | `obstacle_in_path` ahead, close | `stairs_down` (the stairs go up, and are far) |
+| `day_door_button_post_glass_door.jpg` | Accessible-door button post directly in front of a glass door (photographer's reflection) | `door` (the corridor ends at the glass) and `pole` for the thin button post | the post as `pillar`; the reflection as a person |
+| `day_closed_glass_door.jpg` | Closed glass door ("Tirez / Pull") filling the view | `door` ahead, close (the walker is walking into it; glass under 2 m is urgent) | "clear" or nothing |
+| `day_indoor_pillar_sign_stairs_up.jpg` | Wayfinding sign on a pillar right ahead, stairs going **up** in the background | `pillar` ahead, close | `pole` (it is a wide column); `stairs_down` (the stairs go up, and are far) |
 | `day_wall_water_fountains_protruding.jpg` | Wall-mounted water fountains sticking out at waist height | obstacle at the side/ahead: things that **protrude from walls are a classic white-cane miss** | nothing |
-| `day_exit_door_stairs_sign.jpg` | Closed emergency exit door with an "F1 stairs / Sortie Exit" sign | a closed door ahead (`other` / `obstacle_in_path`) | `stairs_down`: it's a sign, not actual stairs |
+| `day_exit_door_stairs_sign.jpg` | Closed emergency exit door with an "F1 stairs / Sortie Exit" sign | `door` ahead (the corridor ends at it) | `stairs_down`: it's a sign, not actual stairs |
 
 Source photos: `IMG_6362`–`IMG_6378` (Abdul). Skipped `IMG_6365` (another close-up of the same parking signs) and `IMG_6369` (near-duplicate of `IMG_6368`).
 
@@ -36,7 +36,7 @@ Added so the prompt is tested on more street hazards than we could photograph ou
 | `web_construction_barriers_cones.jpg` | Barriers and cones across the path | `construction` ahead |  |
 | `web_heaved_sidewalk_tree_root.jpg` | Pavement lifted by a tree root | `uneven_surface` |  |
 | `web_hole_in_pavement.jpg` | Hole in the pavement, seen from above | `pothole` close |  |
-| `web_plaza_sidewalk_benches.jpg` | Wide plaza sidewalk, benches, manhole cover (negative) | no street alert | manhole cover as an obstacle |
+| `web_plaza_sidewalk_benches.jpg` | Wide plaza sidewalk, benches, manhole cover (negative) | no street alert (a bench at the side may be a `chair`, which is asked about, not announced) | manhole cover as an obstacle |
 | `web_pothole_closeup.jpg` | Pothole close-up | `pothole` |  |
 | `web_revolving_doors_ahead.jpg` | Two steps up to revolving doors | `steps_up` + `door` ahead | `stairs_down` |
 | `web_sidewalk_closed_cones.jpg` | 'Sidewalk closed ahead' sign with cones | `construction` ahead |  |
