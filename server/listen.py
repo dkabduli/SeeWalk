@@ -28,6 +28,7 @@ from google import genai
 from pydantic import BaseModel, Field
 
 import config
+from lang_guard import in_language
 
 log = logging.getLogger("seewalk")
 router = APIRouter()
@@ -149,8 +150,11 @@ async def detect_command(audio_b64: str, lang: str = "en", image_b64: str | None
     intent = verified_intent(g.intent, g.heard)
     if intent != g.intent:
         log.info("listen: Gemini said %s for %r, not confirmed by the transcript → none", g.intent, g.heard)
+    answer = answer_for(intent, g.answer)
+    if intent != "read":  # "read this" is word for word, in whatever language the sign is in
+        answer = await in_language(answer, lang)
     return ListenResult(
-        heard=g.heard, intent=intent, answer=answer_for(intent, g.answer), command=intent != "none"
+        heard=g.heard, intent=intent, answer=answer, command=intent != "none"
     )
 
 

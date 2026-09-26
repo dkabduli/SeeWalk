@@ -3,6 +3,7 @@ import asyncio
 from google import genai
 
 import config
+from lang_guard import in_language
 from schemas import SceneResult
 
 _client = genai.Client(api_key=config.GEMINI_API_KEY)
@@ -110,4 +111,9 @@ async def analyze_frame(
         ),
         timeout=8 if careful else 4,
     )
-    return SceneResult.model_validate_json(interaction.output_text)
+    result = SceneResult.model_validate_json(interaction.output_text)
+    if lang == "fr":  # French mode never speaks English (lang_guard.py)
+        result.summary = await in_language(result.summary, lang)
+        for h in result.hazards:
+            h.phrase = await in_language(h.phrase, lang) or h.phrase
+    return result
