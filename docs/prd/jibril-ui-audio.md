@@ -97,6 +97,8 @@ export const strings: Record<Lang, Record<string, string>> = {
     listening: "Listening for “SeeWalk, …”",
     quiet: "Nothing to report",
     youCanSay: "You can say",
+    listeningNow: "Listening…",
+    thinking: "Thinking…",
     autoLabel: "Automatic alerts (people, obstacles)",
     autoOn: "On",
     autoOff: "Off",
@@ -117,6 +119,8 @@ export const strings: Record<Lang, Record<string, string>> = {
     listening: "À l'écoute de « SeeWalk, … »",
     quiet: "Rien à signaler",
     youCanSay: "Vous pouvez dire",
+    listeningNow: "J'écoute…",
+    thinking: "Je réfléchis…",
     autoLabel: "Alertes automatiques (personnes, obstacles)",
     autoOn: "Oui",
     autoOff: "Non",
@@ -191,6 +195,47 @@ export class AudioEngine {
     this.current = null;
   }
 
+  /** A soft, quiet note (for the "got it" chirp and the "working" pulse). */
+  private softNote(freq: number, at: number, ms: number, level: number) {
+    const ctx = this.ctx!;
+    const osc = new OscillatorNode(ctx, { frequency: freq, type: "sine" });
+    const gain = new GainNode(ctx, { gain: 0.0001 });
+    gain.gain.exponentialRampToValueAtTime(level, at + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + ms / 1000);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(at);
+    osc.stop(at + ms / 1000 + 0.02);
+  }
+
+  /** "Got it": two quick rising notes when SeeWalk picks up speech and starts checking it. */
+  playHeard() {
+    if (!this.ctx) return;
+    this.ensureRunning();
+    const t = this.ctx.currentTime;
+    this.softNote(784, t, 90, 0.18);   // G5
+    this.softNote(1175, t + 0.1, 110, 0.18); // D6
+  }
+
+  private workingTimer: ReturnType<typeof setInterval> | null = null;
+
+  /** "Working on it": a gentle pulse every 0.8 s until stopWorking() (or any speech starts). */
+  startWorking() {
+    if (!this.ctx || this.workingTimer) return;
+    this.ensureRunning();
+    const pulse = () => {
+      const t = this.ctx!.currentTime;
+      this.softNote(523, t, 140, 0.09);        // C5
+      this.softNote(659, t + 0.16, 140, 0.07); // E5
+    };
+    pulse();
+    this.workingTimer = setInterval(pulse, 800);
+  }
+
+  stopWorking() {
+    if (this.workingTimer) clearInterval(this.workingTimer);
+    this.workingTimer = null;
+  }
+
   /** Short beep placed in the left (-1), centre (0) or right (+1) ear. */
   playTone(pan: number, freq = 1000, ms = 120): Promise<void> {
     this.ensureRunning();
@@ -217,6 +262,7 @@ export class AudioEngine {
   }
 
   private playBuffer(buffer: AudioBuffer, pan: number): Promise<void> {
+    this.stopWorking(); // the answer is here: the "working" pulse ends
     this.stop();
     this.ensureRunning();
     const ctx = this.ctx!;
@@ -337,6 +383,9 @@ export default function WalkMode() {
   // for now: in testing they flooded the screen. With them off, SeeWalk only speaks when asked
   // ("SeeWalk, …"), plus the safety messages (no connection, camera blocked).
   const [autoAlerts, setAutoAlerts] = useState(false);
+  // Siri-style indicator: "listening" while a spoken clip is checked, "thinking" while an answer
+  // is prepared. Blind users get the same information as sound (a chirp, then a soft pulse).
+  const [busy, setBusy] = useState<"idle" | "listening" | "thinking">("idle");
   const autoAlertsRef = useRef(autoAlerts);
   useLayoutEffect(() => { autoAlertsRef.current = autoAlerts; });
   const t = strings[lang];
@@ -445,18 +494,26 @@ export default function WalkMode() {
   // While a question is being checked or answered, everything else waits: no background
   // snapshots to Gemini, no automatic alerts, no new listening. Then it all resumes.
   const updatePause = () => walkRef.current?.setPaused(checkingVoice.current || answering.current > 0);
+  const refreshBusy = () =>
+    setBusy(answering.current > 0 ? "thinking" : checkingVoice.current ? "listening" : "idle");
   async function answeringQuestion(work: () => Promise<void>) {
     answering.current++;
     speechId.current++;                          // cancel anything SeeWalk was in the middle of saying
     audio.stop();
     voiceRef.current?.hold(true);
     updatePause();
+    refreshBusy();
+    audio.startWorking();                        // soft pulse until the answer starts playing
     try {
       await work();
     } finally {
       answering.current--;
-      if (answering.current === 0) voiceRef.current?.hold(false);
+      if (answering.current === 0) {
+        voiceRef.current?.hold(false);
+        audio.stopWorking();
+      }
       updatePause();
+      refreshBusy();
     }
   }
 
@@ -470,7 +527,12 @@ export default function WalkMode() {
         (c) => onVoiceRef.current(c),
         (msg) => log("voice", msg),
         () => { const v = videoRef.current; return v ? captureFrame(v)?.b64 ?? null : null; },
-        (checking) => { checkingVoice.current = checking; updatePause(); },
+        (checking) => {
+          checkingVoice.current = checking;
+          updatePause();
+          if (checking) audio.playHeard();       // "got it": speech picked up, checking it
+          refreshBusy();
+        },
       );
       audio.onSounding = (on) => voice.setSpeaking(on);
       voiceRef.current = voice;
@@ -489,6 +551,8 @@ export default function WalkMode() {
       speechId.current++;                        // cancel any alert still on its way
       audio.stop();
       setShown(null);
+      audio.stopWorking();
+      setBusy("idle");
       setWalking(false);
       setStatus("idle");
       await audio.playClip(lang, "walk_stopped");
@@ -595,6 +659,12 @@ export default function WalkMode() {
 
       <div className="viewfinder">
         <video ref={videoRef} playsInline muted autoPlay aria-hidden="true" />
+        {walking && busy !== "idle" && (
+          <div className={`working ${busy}`} role="status" aria-label={busy === "thinking" ? t.thinking : t.listeningNow}>
+            <span className="wave" aria-hidden="true"><i /><i /><i /><i /><i /></span>
+            <span>{busy === "thinking" ? t.thinking : t.listeningNow}</span>
+          </div>
+        )}
         {!walking && (
           <div className="setup">
             <p className="tagline">{t.tagline}</p>
@@ -649,6 +719,7 @@ export default function WalkMode() {
 Built in `web/src/styles/walk.css`. Colours come from the white cane: near-black `#0f1113`, white, and the red tip `#e0362c` (urgent, Stop); amber `#f3b21b` = warning, steel `#7d8ea3` = info. Flat and high-contrast, system font, no gradients or decorative motion (the earlier gradient/serif look read as generic).
 - **Setup screen:** tagline + 3 wearing steps (EN/FR), one big white **Start walk** button
 - **Walking:** status dot, **the camera fills most of the screen**, **alert panel** with a direction arrow (← ↑ →) and an urgency colour bar (long "read this" answers switch to smaller text and scroll inside the panel), a small white **What's ahead?** and a red outlined **Stop** side by side
+- **Working indicator (like Siri):** when speech is picked up, a soft two-note **"got it" chirp** and a **"Listening…"** pill with white waveform bars over the camera; while an answer is prepared, a quiet **"working" pulse** every 0.8 s and a **"Thinking…"** pill with red bars. The pulse stops the moment the answer plays. (The chirp can also fire for nearby talk, since the phone only knows it was "SeeWalk, …" after Gemini checks; the pulse only plays for real questions.)
 - **Automatic alerts are OFF by default** (setting on the setup screen): in testing the fast layer + Gemini hazards flooded the screen, so for now SeeWalk only speaks when asked ("SeeWalk, …") plus the safety messages. Turn it on to bring back automatic warnings
 - Caption text is 26–36 px bold: that's what viewers read in the video
 

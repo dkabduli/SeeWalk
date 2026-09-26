@@ -41,6 +41,9 @@ export default function WalkMode() {
   // for now: in testing they flooded the screen. With them off, SeeWalk only speaks when asked
   // ("SeeWalk, …"), plus the safety messages (no connection, camera blocked).
   const [autoAlerts, setAutoAlerts] = useState(false);
+  // Siri-style indicator: "listening" while a spoken clip is checked, "thinking" while an answer
+  // is prepared. Blind users get the same information as sound (a chirp, then a soft pulse).
+  const [busy, setBusy] = useState<"idle" | "listening" | "thinking">("idle");
   const autoAlertsRef = useRef(autoAlerts);
   useLayoutEffect(() => { autoAlertsRef.current = autoAlerts; });
   const t = strings[lang];
@@ -149,18 +152,26 @@ export default function WalkMode() {
   // While a question is being checked or answered, everything else waits: no background
   // snapshots to Gemini, no automatic alerts, no new listening. Then it all resumes.
   const updatePause = () => walkRef.current?.setPaused(checkingVoice.current || answering.current > 0);
+  const refreshBusy = () =>
+    setBusy(answering.current > 0 ? "thinking" : checkingVoice.current ? "listening" : "idle");
   async function answeringQuestion(work: () => Promise<void>) {
     answering.current++;
     speechId.current++;                          // cancel anything SeeWalk was in the middle of saying
     audio.stop();
     voiceRef.current?.hold(true);
     updatePause();
+    refreshBusy();
+    audio.startWorking();                        // soft pulse until the answer starts playing
     try {
       await work();
     } finally {
       answering.current--;
-      if (answering.current === 0) voiceRef.current?.hold(false);
+      if (answering.current === 0) {
+        voiceRef.current?.hold(false);
+        audio.stopWorking();
+      }
       updatePause();
+      refreshBusy();
     }
   }
 
@@ -174,7 +185,12 @@ export default function WalkMode() {
         (c) => onVoiceRef.current(c),
         (msg) => log("voice", msg),
         () => { const v = videoRef.current; return v ? captureFrame(v)?.b64 ?? null : null; },
-        (checking) => { checkingVoice.current = checking; updatePause(); },
+        (checking) => {
+          checkingVoice.current = checking;
+          updatePause();
+          if (checking) audio.playHeard();       // "got it": speech picked up, checking it
+          refreshBusy();
+        },
       );
       audio.onSounding = (on) => voice.setSpeaking(on);
       voiceRef.current = voice;
@@ -193,6 +209,8 @@ export default function WalkMode() {
       speechId.current++;                        // cancel any alert still on its way
       audio.stop();
       setShown(null);
+      audio.stopWorking();
+      setBusy("idle");
       setWalking(false);
       setStatus("idle");
       await audio.playClip(lang, "walk_stopped");
@@ -299,6 +317,12 @@ export default function WalkMode() {
 
       <div className="viewfinder">
         <video ref={videoRef} playsInline muted autoPlay aria-hidden="true" />
+        {walking && busy !== "idle" && (
+          <div className={`working ${busy}`} role="status" aria-label={busy === "thinking" ? t.thinking : t.listeningNow}>
+            <span className="wave" aria-hidden="true"><i /><i /><i /><i /><i /></span>
+            <span>{busy === "thinking" ? t.thinking : t.listeningNow}</span>
+          </div>
+        )}
         {!walking && (
           <div className="setup">
             <p className="tagline">{t.tagline}</p>

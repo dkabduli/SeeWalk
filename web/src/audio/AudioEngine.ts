@@ -56,6 +56,47 @@ export class AudioEngine {
     this.current = null;
   }
 
+  /** A soft, quiet note (for the "got it" chirp and the "working" pulse). */
+  private softNote(freq: number, at: number, ms: number, level: number) {
+    const ctx = this.ctx!;
+    const osc = new OscillatorNode(ctx, { frequency: freq, type: "sine" });
+    const gain = new GainNode(ctx, { gain: 0.0001 });
+    gain.gain.exponentialRampToValueAtTime(level, at + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + ms / 1000);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(at);
+    osc.stop(at + ms / 1000 + 0.02);
+  }
+
+  /** "Got it": two quick rising notes when SeeWalk picks up speech and starts checking it. */
+  playHeard() {
+    if (!this.ctx) return;
+    this.ensureRunning();
+    const t = this.ctx.currentTime;
+    this.softNote(784, t, 90, 0.18);   // G5
+    this.softNote(1175, t + 0.1, 110, 0.18); // D6
+  }
+
+  private workingTimer: ReturnType<typeof setInterval> | null = null;
+
+  /** "Working on it": a gentle pulse every 0.8 s until stopWorking() (or any speech starts). */
+  startWorking() {
+    if (!this.ctx || this.workingTimer) return;
+    this.ensureRunning();
+    const pulse = () => {
+      const t = this.ctx!.currentTime;
+      this.softNote(523, t, 140, 0.09);        // C5
+      this.softNote(659, t + 0.16, 140, 0.07); // E5
+    };
+    pulse();
+    this.workingTimer = setInterval(pulse, 800);
+  }
+
+  stopWorking() {
+    if (this.workingTimer) clearInterval(this.workingTimer);
+    this.workingTimer = null;
+  }
+
   /** Short beep placed in the left (-1), centre (0) or right (+1) ear. */
   playTone(pan: number, freq = 1000, ms = 120): Promise<void> {
     this.ensureRunning();
@@ -82,6 +123,7 @@ export class AudioEngine {
   }
 
   private playBuffer(buffer: AudioBuffer, pan: number): Promise<void> {
+    this.stopWorking(); // the answer is here: the "working" pulse ends
     this.stop();
     this.ensureRunning();
     const ctx = this.ctx!;
