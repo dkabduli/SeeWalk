@@ -8,6 +8,26 @@ SeeWalk runs on a phone worn on a lanyard or chest strap. It watches the path ah
 
 ---
 
+## At a glance
+
+```mermaid
+flowchart LR
+    A["📷 Camera<br/><small>phone takes a photo</small>"] -- photo --> B["Gemini<br/><small>sees the hazards</small>"]
+    B -- hazards --> C["SeeWalk<br/><small>picks what matters</small>"]
+    C -- what to say --> D["ElevenLabs<br/><small>turns it into a voice</small>"]
+    D -- voice --> E["🎧 Headphones<br/><small>walker hears it</small>"]
+```
+
+### 3D model
+
+An interactive 3D version of this flow lives at [`docs/signal-path-3d.html`](docs/signal-path-3d.html). Open it locally in any browser (drag to turn, scroll to zoom):
+
+```bash
+open docs/signal-path-3d.html
+```
+
+---
+
 ## How it works: the data flow
 
 ```
@@ -182,6 +202,7 @@ seewalk/
 │   └── scripts/
 │       ├── phrases.py          # EN/FR phrase table
 │       ├── generate_clips.py   # build web/public/audio/{en,fr}
+│       ├── check_connections.py # ping Gemini, ElevenLabs, Tiger Data
 │       └── eval_samples.py     # run samples/*.jpg through Gemini, print hazards + latency
 ├── web/                        # React + Vite + TS PWA
 │   ├── public/audio/{en,fr}/   # pre-generated ElevenLabs clips
@@ -194,25 +215,40 @@ seewalk/
 │       ├── i18n/               # EN/FR strings
 │       └── pages/WalkMode.tsx
 ├── samples/                    # street photos for offline testing
+├── docs/signal-path-3d.html    # interactive 3D model of the flow
 └── SEEWALK_SPEC.md
 ```
 
-## Environment variables (server only)
+## Setup (server)
 
+Needs **Python 3.10+** (the Gemini Interactions API isn't in SDK versions that support 3.9).
+
+```bash
+cd server
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+cp .env.example .env          # then fill in the keys (ask Abdul)
+.venv/bin/python scripts/check_connections.py
 ```
-GEMINI_API_KEY=
-GEMINI_MODEL=gemini-3.8-flash
-GEMINI_FALLBACK_MODEL=gemini-3.5-flash-lite
-ELEVENLABS_API_KEY=
-ELEVENLABS_VOICE_ID=          # one multilingual voice for EN + FR
-ALLOWED_ORIGINS=
-```
+
+`server/.env` is git-ignored. Variables:
+
+| Variable | Value |
+|---|---|
+| `GEMINI_API_KEY` | from Google AI Studio |
+| `GEMINI_MODEL` | `gemini-3.8-flash` |
+| `GEMINI_FALLBACK_MODEL` | `gemini-3.5-flash-lite` |
+| `ELEVENLABS_API_KEY` | from ElevenLabs → Developers → API keys |
+| `ELEVENLABS_VOICE_ID` | `SAz9YHcvj6GT2YYXdXww` (River: one voice for EN + FR) |
+| `DATABASE_URL` | Tiger Data connection string (hazard map, later) |
+| `ALLOWED_ORIGINS` | e.g. `http://localhost:5173` |
 
 ## Build order
 
-- [ ] Server scaffold + `/health`
+- [ ] Server `/health` (config + requirements done)
 - [ ] `gemini.py` + `eval_samples.py` on 10+ street photos → **go/no-go** on latency and accuracy; tune the prompt
-- [ ] `generate_clips.py` → EN/FR clip library committed
+- [x] API keys + `check_connections.py` (Gemini ✅, ElevenLabs ✅)
+- [x] `generate_clips.py` → EN/FR clip library committed (River voice, 48 clips)
 - [ ] `/tts` with cache
 - [ ] Web scaffold: camera → capture → `/analyze` loop
 - [ ] AlertManager (+ unit tests) + AudioEngine → audible end to end
