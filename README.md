@@ -2,9 +2,9 @@
 
 **A white cane finds the ground. SeeWalk finds everything else.** People, bikes, cars, potholes and branches at head height are announced calmly, and only when it matters.
 
-SeeWalk runs on a phone worn on a lanyard or chest strap. It watches the path ahead with the rear camera, uses **Gemini** to understand the scene, and speaks short, prioritized alerts in an **ElevenLabs** voice (English or French) through open-ear Bluetooth headphones.
+SeeWalk runs on a phone worn on a lanyard or chest strap. It watches the path ahead with the rear camera, uses **Gemini** to understand the scene, and speaks short alerts in an **ElevenLabs** voice (English or French) through open-ear Bluetooth headphones.
 
-> Built by team **Goobers** for Hack the Hill III (uOttawa, Sept 25–27, 2026). Full product spec: [`SEEWALK_SPEC.md`](SEEWALK_SPEC.md).
+> Built by team **Goobers** for Hack the Hill III (uOttawa, Sept 25–27, 2026). Original product spec: [`SEEWALK_SPEC.md`](SEEWALK_SPEC.md). Where the two differ, **this README is the current plan**.
 
 ---
 
@@ -28,75 +28,76 @@ Drag to turn, scroll to zoom. Source: [`docs/signal-path-3d.html`](docs/signal-p
 
 ---
 
+## What we're building for the demo
+
+**Goal: it works and it looks great in a ~2-minute video.** Everything below serves that.
+
+- **In:** live camera → Gemini → short spoken alerts in River's voice, left/right tones, EN/FR, "What's ahead?" button, on-screen captions, fails out loud.
+- **Stretch (only if the core is solid):** on-device COCO-SSD fast layer, "Ask" voice questions, Tiger Data hazard map, Vultr deploy.
+- **Out:** crowds, night/rain, turn-by-turn navigation, face recognition (never).
+
+---
+
 ## How it works: the data flow
 
 ```
- PHONE (iPhone Safari, worn on chest)                         SERVER (FastAPI on Vultr)
-┌──────────────────────────────────────────┐                ┌──────────────────────────────────────┐
-│ 1. CAPTURE                               │                │                                      │
-│    rear camera → canvas → 768px JPEG q0.7│                │                                      │
-│    → base64   (every ~2.5 s, 1 in flight)│                │                                      │
-│                    │                     │  2. POST       │                                      │
-│                    └─────────────────────┼──/analyze─────►│ 3. GEMINI 3.8 Flash                  │
-│                                          │ {image, lang}  │    client.interactions.create(       │
-│                                          │                │      input=[prompt, image],          │
-│                                          │                │      response_format=SceneResult)    │
-│                                          │                │    → Pydantic validation             │
-│                    ┌─────────────────────┼◄─────JSON──────┤ 4. SceneResult {hazards[], unclear}  │
-│                    ▼                     │                │                                      │
-│ 5. ALERT MANAGER                         │                │                                      │
-│    confidence ≥ 0.6                      │                │                                      │
-│    → 2-frame confirm (urgent skips)      │                │                                      │
-│    → cooldown 6 s per type+direction     │                │                                      │
-│    → priority queue (tier 1 interrupts)  │                │                                      │
-│                    │                     │                │                                      │
-│                    ▼                     │                │                                      │
-│ 6. AUDIO ENGINE (Web Audio)              │                │                                      │
-│    a) tone, panned L / center / R        │                │                                      │
-│    b) known hazard → preloaded           │                │                                      │
-│       ElevenLabs clip (no network)       │                │                                      │
-│    c) "other" hazard ────────────────────┼──POST /tts────►│ ElevenLabs Flash TTS (LRU cached)    │
-│       play returned mp3 ◄────────────────┼────audio/mpeg──┤                                      │
-│                    │                     │                │                                      │
-│                    ▼                     │                └──────────────────────────────────────┘
-│ 7. Bluetooth → open-ear headphones       │
-└──────────────────────────────────────────┘
+ PHONE (iPhone Safari, worn on chest)                     SERVER (FastAPI)
+┌───────────────────────────────────────┐              ┌───────────────────────────────────────┐
+│ 1. CAPTURE                            │              │                                       │
+│    rear camera → canvas → 768px JPEG  │  2. POST     │ 3. GEMINI 3.5 Flash-Lite              │
+│    every ~1.5 s, one request at a time├──/analyze───►│    thinking_level = "minimal"         │
+│                                       │ {image,lang} │    structured JSON (SceneResult)      │
+│                                       │              │                                       │
+│ 5. DECIDE (alert filter)              │◄────JSON─────┤ 4. SceneResult {hazards[], unclear}   │
+│    confidence ≥ 0.6                   │              │                                       │
+│    same thing not repeated within 5 s │              │                                       │
+│    most urgent hazard wins            │              │                                       │
+│                 │                     │              │                                       │
+│ 6. SPEAK                              │   POST /tts  │ 7. ELEVENLABS Flash v2.5 (River)      │
+│    tone panned L / C / R, then ───────┼─{text,lang}─►│    streaming, cached by (text, lang)  │
+│    play the phrase ◄──────────────────┼──audio/mpeg──┤                                       │
+│    (bundled clip if the network fails)│              │                                       │
+│                 │                     │              └───────────────────────────────────────┘
+│ 8. Bluetooth → open-ear headphones    │
+└───────────────────────────────────────┘
 ```
 
-### Step by step
-
-1. **Capture.** The phone's rear camera streams into a hidden `<video>`. About every 2.5 s, a frame is drawn to a canvas, resized to 768 px on the long edge, JPEG-encoded at quality 0.7 and base64-encoded. Only **one request is in flight** at a time. The next capture is scheduled after the previous response arrives, with a 5 s timeout.
-2. **Send.** The phone sends `POST /analyze` with `{ image, lang }`. API keys never leave the server.
-3. **Understand (Gemini).** The backend calls **Gemini 3.8 Flash** through the **Interactions API** with a system prompt (below) and the image, requesting **structured JSON** that matches the `SceneResult` schema. Each call is **stateless**: no `previous_interaction_id`, so every frame is judged on its own. On timeout or error, the backend retries once with `gemini-3.5-flash-lite`, then returns `503`.
+1. **Capture.** The phone's rear camera streams into a hidden `<video>`. Every ~1.5 s a frame is drawn to a canvas, resized to 768 px, JPEG q0.7, base64. Only **one request is in flight** at a time (5 s timeout).
+2. **Send.** `POST /analyze` with `{ image, lang }`. API keys never leave the server.
+3. **See (Gemini).** The server calls **Gemini 3.5 Flash-Lite** through the **Interactions API** with `thinking_level: "minimal"` and a JSON schema, so Gemini returns structured hazards instead of free text. Each frame is judged on its own.
 4. **Return.** The validated `SceneResult` goes back to the phone.
-5. **Decide (alert manager).** This runs on the client and is the core of the UX:
-   - drop any hazard with `confidence < 0.6` ("never guess")
-   - a non-urgent hazard must appear in **2 consecutive frames** (same type + direction); `urgency: 1` speaks on the first frame
-   - **cooldown**: the same type + direction is not repeated within 6 s
-   - **priority tiers**: tier 1 interrupts anything; tier 2 is a short warning; tier 3 plays only when nothing else is playing
-6. **Speak (audio engine).**
-   - **Tone first.** A short Web Audio tone is panned left, center or right with `StereoPannerNode`, so direction comes through before any words.
-   - **Then words:**
-     - Known hazard types play a **pre-generated ElevenLabs clip**, preloaded as an `AudioBuffer`. It plays instantly and needs no network.
-     - Rare `other` hazards send their `short_label` (≤ 5 words, already in the user's language) to `POST /tts`. The server calls **ElevenLabs Flash** and caches the result by `(text, lang)`.
-7. **Hear.** Audio goes over Bluetooth to open-ear or bone-conduction headphones (e.g. Shokz), so the user can still hear traffic.
+5. **Decide.** The phone keeps it simple: drop anything under 0.6 confidence ("never guess"), don't repeat the same hazard + direction within 5 s, and speak only the most urgent one.
+6. **Speak.** A short tone panned left/center/right plays first, then the phone sends the hazard's `phrase` to `POST /tts`.
+7. **Voice (ElevenLabs).** The server calls **ElevenLabs Flash v2.5** in River's voice and returns the mp3 (cached, so repeated phrases are instant). If the network is down, the phone plays the matching **bundled clip** from `web/public/audio/` instead.
+8. **Hear.** Bluetooth to open-ear headphones, so the walker still hears traffic.
 
-### Gemini system prompt (starting point, tune in AI Studio)
+### Measured latency (Sept 26, laptop on home Wi-Fi, free tier)
 
-> You assist a blind pedestrian walking on a quiet street. The camera is chest-height, facing forward. Report ONLY things relevant to walking safely in the next ~10 metres: drop-offs, stairs, curbs, potholes, uneven pavement, obstacles in the walking path, head-height obstacles (branches, signs, mirrors), crosswalks, stop signs, construction. Ignore anything off the walking path, parked cars not in the path, buildings, sky. Do not report people or vehicles (handled elsewhere) unless they are an obstacle not moving. Never guess: if not clearly visible, omit it. If the image is too blurry or dark, set unclear=true. Never describe anything as safe to cross. Write short_label in {English|French}.
+| Step | Time |
+|---|---|
+| Gemini 3.5 Flash-Lite, minimal thinking (one frame) | **1.16–1.31 s** |
+| ElevenLabs Flash v2.5, first audio byte | **0.18–0.27 s** |
+| Bluetooth | ~0.2 s |
+| **Camera → walker hears it** | **≈ 1.5–1.8 s** |
 
-### Gemini call (Python, `server/gemini.py`)
+Alternatives we measured and rejected:
+
+| Option | Result | Why not |
+|---|---|---|
+| Gemini 3.8 Flash | 3.9–37.7 s per frame | Far too slow (lowest thinking level is "low") |
+| Gemini 3.8 Live, speaking for itself | ~1.1 s to first audio | Replaces ElevenLabs/River; answers ran ~4 s long; harder to control what it says |
+| Gemini 3.8 Live → transcript → ElevenLabs | ~1.3–1.5 s | Same speed as Flash-Lite, but needs a WebSocket relay; Live can't return text directly |
+
+### Gemini call (`server/gemini.py`)
 
 ```python
-from google import genai
-client = genai.Client()  # reads GEMINI_API_KEY
-
 interaction = client.interactions.create(
-    model="gemini-3.8-flash",
+    model="gemini-3.5-flash-lite",
     input=[
         {"type": "text", "text": SYSTEM_PROMPT},
         {"type": "image", "data": image_b64, "mime_type": "image/jpeg"},
     ],
+    generation_config={"thinking_level": "minimal"},
     response_format={
         "type": "text",
         "mime_type": "application/json",
@@ -105,6 +106,10 @@ interaction = client.interactions.create(
 )
 result = SceneResult.model_validate_json(interaction.output_text)
 ```
+
+### System prompt (starting point, tune with real photos)
+
+> You assist a blind pedestrian walking on a quiet street. The camera is chest-height, facing forward. Report ONLY things that matter for walking safely in the next ~10 metres: people or bikes coming toward the walker, cars in or entering the path, drop-offs, stairs, curbs, potholes, uneven pavement, obstacles in the path, head-height obstacles (branches, signs, mirrors), crosswalks, stop signs, construction. Ignore anything off the path, buildings, sky. Never guess: if it isn't clearly visible, leave it out. If the image is too blurry or dark, set unclear=true. Never say anything is safe to cross. Write each `phrase` in {English|French}, at most 4 words, hazard then direction (e.g. "Person ahead, left").
 
 ---
 
@@ -116,15 +121,15 @@ result = SceneResult.model_validate_json(interaction.output_text)
 {
   "hazards": [
     {
-      "type": "crosswalk | stop_sign | pothole | uneven_surface | head_height_obstacle | obstacle_in_path | construction | curb_or_dropoff | stairs_down | other",
+      "type": "person | bike | car | crosswalk | stop_sign | pothole | uneven_surface | head_height_obstacle | obstacle_in_path | construction | curb_or_dropoff | stairs_down | other",
       "direction": "left | ahead | right",
       "distance": "close | near | far",
-      "urgency": 1,            // 1 = urgent, 2, 3
-      "confidence": 0.82,      // 0–1
-      "short_label": "Fallen branch"  // ≤ 5 words, used only for "other"
+      "urgency": 1,               // 1 = urgent, 2 = warning, 3 = info
+      "confidence": 0.82,         // 0–1
+      "phrase": "Pothole ahead"   // ≤ 4 words, in the requested language, spoken by ElevenLabs
     }
   ],
-  "unclear": false             // image too blurry/dark to judge
+  "unclear": false                // image too blurry/dark to judge
 }
 ```
 
@@ -132,96 +137,99 @@ result = SceneResult.model_validate_json(interaction.output_text)
 
 | Method | Path | Request | Response |
 |---|---|---|---|
-| `POST` | `/analyze` | `{ "image": "<base64 jpeg>", "lang": "en" \| "fr" }` | `SceneResult` (JSON); `503` if Gemini is unavailable |
-| `POST` | `/tts` | `{ "text": "Fallen branch", "lang": "en" \| "fr" }` | `audio/mpeg` bytes |
-| `GET` | `/health` | — | `{ "ok": true }` |
+| `POST` | `/analyze` | `{ "image": "<base64 jpeg>", "lang": "en" \| "fr" }` | `SceneResult`; `503` if Gemini is unavailable |
+| `POST` | `/tts` | `{ "text": "Pothole ahead", "lang": "en" \| "fr" }` | `audio/mpeg` |
+| `GET` | `/health` | | `{ "ok": true }` |
 
----
+### Offline fallback clips
 
-## Hazard → audio mapping
+If `/tts` fails, the phone plays a bundled clip chosen by `type` (+ `direction` for person/bike/car). Keys and EN/FR text are in [`web/src/audio/clips.json`](web/src/audio/clips.json); the mp3s are in `web/public/audio/{en,fr}/`. System clips: `walk_started`, `walk_stopped`, `no_connection`, `connection_back`, `camera_blocked`, `unclear`.
 
-Direction goes into the **tone's stereo pan**. The clip wording stays short.
-
-| Gemini `type` | Tier | Tone | Clip key | English | Français |
-|---|---|---|---|---|---|
-| `stairs_down` | 1 | urgent double beep | `stairs_down` | Stairs going down | Escalier qui descend |
-| `curb_or_dropoff` | 1 | urgent double beep | `curb` | Curb ahead | Bordure devant |
-| `head_height_obstacle` (close) | 1 | urgent double beep | `head_height` | Obstacle at head height | Obstacle à hauteur de tête |
-| `head_height_obstacle` (near/far) | 2 | soft pulse | `head_height` | Obstacle at head height | Obstacle à hauteur de tête |
-| `obstacle_in_path` / `construction` | 2 | soft pulse | `obstacle_path` | Obstacle in your path | Obstacle sur votre chemin |
-| `pothole` | 2 | soft pulse | `pothole` | Pothole ahead | Nid-de-poule devant |
-| `uneven_surface` | 2 | soft pulse | `uneven` | Uneven ground ahead | Sol inégal devant |
-| `crosswalk` | 3 | gentle chime | `crosswalk` | Crosswalk ahead | Passage pour piétons devant |
-| `stop_sign` | 3 | gentle chime | `stop_sign` | Stop sign ahead | Panneau d'arrêt devant |
-| `other` | 2 | soft pulse | *live TTS* | `short_label` | `short_label` |
-
-System clips: `walk_started` / `walk_stopped`, `no_connection`, `camera_blocked`, `unclear`, plus the person/bike/car clips used by the fast layer.
-
----
-
-## Two speeds
-
-Gemini is the **slow layer** (about 1–2 s per frame). It handles things a basic object detector can't: crosswalks, potholes, head-height branches and construction. A cyclist covers about 10 m in 2 s, so moving hazards (people, bikes, cars) will be caught by an **on-device fast layer** (TensorFlow.js + COCO-SSD, coming next). Both layers feed the **same alert manager and audio engine**, so priorities and cooldowns stay consistent.
-
-## Fail out loud
+### Fail out loud
 
 Silence must never mean "all clear" by accident.
 
-| Condition | What the user hears |
+| Condition | What the walker hears |
 |---|---|
-| 2 consecutive `/analyze` failures | low tone + "No connection, I can't see right now" (repeated every 20 s while down; short tone on recovery) |
-| Camera track ends / lens covered (very dark frame) | low tone + "Camera blocked" |
-| `unclear: true` during a walk | nothing (no noise) |
-| `unclear: true` after the user taps **"What's ahead?"** | "Unclear" |
-
-## ElevenLabs usage
-
-- **One multilingual voice** for English and French, so the voice stays the same when the user switches language.
-- **Pre-generated clips:** `server/scripts/generate_clips.py` uses `eleven_multilingual_v2` to render every phrase to `web/public/audio/{en,fr}/{key}.mp3`. Run it with `--list-voices` to pick a voice.
-- **Live TTS:** `eleven_flash_v2_5` (low latency), only for rare `other` hazards, with a server-side cache.
-
-## iPhone notes
-
-- Tapping **Start walk** creates and resumes the `AudioContext`. iOS requires a user gesture to unlock audio.
-- Clips play through Web Audio, not `<audio>` tags, so they aren't blocked by gesture rules mid-walk.
-- `<video playsinline muted>` with `facingMode: "environment"`; the Screen Wake Lock keeps the phone awake.
-- Camera access requires **HTTPS**. For local testing, run a `cloudflared` or `ngrok` tunnel in front of the Vite dev server (which proxies `/api` to FastAPI).
+| 2 failed `/analyze` calls in a row | low tone + "No connection, I can't see right now" (repeats every 20 s; "Connection back" on recovery) |
+| Camera stops or lens covered | low tone + "Camera blocked" |
+| `unclear: true` while walking | nothing |
+| `unclear: true` after tapping **"What's ahead?"** | "Unclear" |
 
 ---
 
-## Repo layout (planned)
+## Tools breakdown
 
-```
-seewalk/
-├── server/                     # FastAPI
-│   ├── main.py                 # /analyze, /tts, /health
-│   ├── gemini.py               # Interactions API call + prompt
-│   ├── tts.py                  # ElevenLabs live TTS + cache
-│   ├── schemas.py              # SceneResult, Hazard, request models
-│   ├── config.py               # env vars
-│   └── scripts/
-│       ├── phrases.py          # EN/FR phrase table
-│       ├── generate_clips.py   # build web/public/audio/{en,fr}
-│       ├── check_connections.py # ping Gemini, ElevenLabs, Tiger Data
-│       └── eval_samples.py     # run samples/*.jpg through Gemini, print hazards + latency
-├── web/                        # React + Vite + TS PWA
-│   ├── public/audio/{en,fr}/   # pre-generated ElevenLabs clips
-│   └── src/
-│       ├── camera/             # useCamera, captureFrame
-│       ├── api/                # analyze(), tts()
-│       ├── walk/               # useWalkLoop (cadence, timeouts, failures)
-│       ├── alerts/             # AlertManager, hazardTable
-│       ├── audio/              # AudioEngine (tones, pan, clips, live TTS)
-│       ├── i18n/               # EN/FR strings
-│       └── pages/WalkMode.tsx
-├── samples/                    # street photos for offline testing
-├── docs/signal-path-3d.html    # interactive 3D model of the flow
-└── SEEWALK_SPEC.md
-```
+| Tool | What we use it for | Where in the code | Status |
+|---|---|---|---|
+| **Gemini 3.5 Flash-Lite** (Interactions API, `google-genai` SDK) | Looks at each frame and returns hazards as JSON | `server/gemini.py` | ✅ key works, 1.2 s measured |
+| **ElevenLabs Flash v2.5** | Speaks each alert live in River's voice (EN/FR) | `server/tts.py` | ✅ key works, 0.2 s measured |
+| **ElevenLabs Multilingual v2** | Pre-made offline/system clips | `server/scripts/generate_clips.py` → `web/public/audio/` | ✅ 48 clips generated |
+| **FastAPI** (Python 3.12) | Backend: holds the keys, `/analyze`, `/tts`, `/health` | `server/main.py` | ⬜ next |
+| **React + Vite + TypeScript** | The phone web app | `web/` | ⬜ scaffold Saturday AM |
+| **getUserMedia + Canvas** | Camera feed and frame capture on the iPhone | `web/src/camera/` | ⬜ |
+| **Web Audio API** | Panned tones + playing speech | `web/src/audio/` | ⬜ |
+| **cloudflared / ngrok** | HTTPS tunnel so the iPhone can use the camera during dev | — | ⬜ |
+| **Vultr + Caddy** | Hosting with automatic HTTPS | — | stretch |
+| **GoDaddy Registry domain** | Public URL for the demo | — | stretch |
+| **TensorFlow.js + COCO-SSD** | On-device fast layer for people/bikes/cars (~0.2 s) | `web/src/detection/` | stretch |
+| **Tiger Data** + **Leaflet** | Hazard map (civic layer) | `server/db.py`, `web/src/pages/Map.tsx` | stretch |
+| **GitHub** | Repo, one branch per person, PRs into `main` | — | ✅ |
+
+---
+
+## Who's doing what
+
+Each person owns their own folders, so we don't step on each other. Build against the **data contracts** above and the pieces will fit together.
+
+### Abdul: AI + backend (+ merges into `main`)
+- `server/gemini.py`, `schemas.py`, `main.py`: `/analyze`, `/health`
+- `server/tts.py` + `/tts`: ElevenLabs Flash streaming with cache
+- `server/scripts/eval_samples.py`: run the team's street photos through Gemini, tune the prompt, confirm speed and accuracy
+- Enable Gemini billing on the demo key before filming
+- Review and merge everyone's PRs
+
+### Aroha: phone UI + audio
+- **First thing Saturday:** scaffold `web/` (React + Vite + TS) and push it, since everyone builds inside it
+- Walk Mode screen: big Start/Stop button, EN/FR toggle, **"What's ahead?"** button, large captions of what was said (these show up in the video)
+- `web/src/audio/`: unlock audio on the Start tap (iOS), panned tones, play `/tts` audio, fall back to bundled clips
+- `web/src/alerts/`: confidence ≥ 0.6, 5 s no-repeat, most urgent wins
+- VoiceOver check
+
+### Siddig: camera + capture (+ fast-layer stretch)
+- `web/src/camera/`: rear camera on iPhone Safari, frame capture (768 px JPEG), one request in flight, `VITE_FRAME_INTERVAL_MS` (1500 demo / 5000–6000 during dev)
+- Fail-out-loud detection: camera stopped/covered, 2 failed requests
+- **Stretch:** COCO-SSD fast layer for people/bikes/cars, or the "Ask" voice-question button
+
+### Jibril: deploy + video + Devpost
+- HTTPS tunnel so the team's iPhones can reach the laptop server
+- **Shot list and filming**: quiet campus path, phone on a chest strap, open-ear headphones, captions on screen. Scenes: person approaching, stop sign, crosswalk, pothole/curb, chair in the path, an "Unclear" moment
+- Edit the ~2 min video, write the Devpost, add everyone, submit
+- **Stretch:** Vultr + GoDaddy domain deploy; Tiger Data hazard map
+
+### Everyone
+- 3–4 chest-height photos each (curbs, crosswalks, stop signs, stairs, potholes, branches) → send to Abdul for `samples/`
+- Work on your branch (`Abduls-Work`, `Arohas-Work`, `Siddigs-Work`, `Jibrls-Work`), open a PR into `main` when something works, commit often (judges read the history)
+
+---
+
+## Phases
+
+| Phase | When | Goal | Done when |
+|---|---|---|---|
+| **0. Setup** | Fri night | Keys, voice, clips, repo | ✅ Gemini + ElevenLabs connected, River picked, 48 clips, branches made |
+| **1. Foundations** | Sat 9 AM – 12 PM | Backend works; `web/` scaffolded; camera on iPhone; tunnel up | `curl /analyze` returns hazards for a street photo; iPhone shows the live camera over HTTPS |
+| **2. End to end** | Sat 12 – 3 PM | Phone → Gemini → ElevenLabs → ears | Point the iPhone at a stop sign and hear **"Stop sign ahead"** in River's voice |
+| **3. Demo-ready** | Sat 3 – 7 PM | Tones, captions, EN/FR, "What's ahead?", fail out loud, prompt tuned | A full walk around one block sounds calm and correct |
+| **4. Film** | Sat 7 – 11 PM | Billing on, record the field walk (several takes) | Clean footage of every scene on the shot list |
+| **5. Polish + stretch** | Sat 11 PM – Sun 1 AM | Stretch goals only if the core is solid. **1 AM feature freeze** | No known demo bugs |
+| **6. Submit** | Sun 7 – 9:30 AM | Edit video, Devpost, add teammates, link GitHub | **Submitted by 9:30 AM** |
+
+---
 
 ## Setup (server)
 
-Needs **Python 3.10+** (the Gemini Interactions API isn't in SDK versions that support 3.9).
+Needs **Python 3.10+** (older SDK versions that support 3.9 don't have the Interactions API).
 
 ```bash
 cd server
@@ -232,37 +240,55 @@ cp .env.example .env          # then fill in the keys (see below)
 ```
 
 **Keys (free tier for now):**
-- **Gemini:** create **your own** free key at [aistudio.google.com/api-keys](https://aistudio.google.com/api-keys) so each of us has a separate rate limit. Billing will be enabled on one demo key before the field walk and live demo.
+- **Gemini:** create **your own** free key at [aistudio.google.com/api-keys](https://aistudio.google.com/api-keys) so each of us has a separate rate limit. Billing gets enabled on one demo key before filming.
 - **ElevenLabs:** use the shared team key (ask Abdul; send it privately, never commit it).
-- The phone's frame interval will be configurable (`VITE_FRAME_INTERVAL_MS`, default 2500). Use **5000–6000** during development to stay under free-tier limits.
+- Set `VITE_FRAME_INTERVAL_MS` to **5000–6000** during development to stay under free-tier limits.
 
 `server/.env` is git-ignored. Variables:
 
 | Variable | Value |
 |---|---|
 | `GEMINI_API_KEY` | from Google AI Studio |
-| `GEMINI_MODEL` | `gemini-3.8-flash` |
-| `GEMINI_FALLBACK_MODEL` | `gemini-3.5-flash-lite` |
+| `GEMINI_MODEL` | `gemini-3.5-flash-lite` |
+| `GEMINI_THINKING_LEVEL` | `minimal` |
 | `ELEVENLABS_API_KEY` | from ElevenLabs → Developers → API keys |
 | `ELEVENLABS_VOICE_ID` | `SAz9YHcvj6GT2YYXdXww` (River: one voice for EN + FR) |
-| `DATABASE_URL` | Tiger Data connection string (hazard map, later) |
+| `ELEVENLABS_TTS_MODEL` | `eleven_flash_v2_5` |
+| `DATABASE_URL` | Tiger Data connection string (stretch) |
 | `ALLOWED_ORIGINS` | e.g. `http://localhost:5173` |
 
-## Build order
+## Repo layout
 
-- [ ] Server `/health` (config + requirements done)
-- [ ] `gemini.py` + `eval_samples.py` on 10+ street photos → **go/no-go** on latency and accuracy; tune the prompt
-- [x] API keys + `check_connections.py` (Gemini ✅, ElevenLabs ✅)
-- [x] `generate_clips.py` → EN/FR clip library committed (River voice, 48 clips)
-- [ ] `/tts` with cache
-- [ ] Web scaffold: camera → capture → `/analyze` loop
-- [ ] AlertManager (+ unit tests) + AudioEngine → audible end to end
-- [ ] Fail-out-loud states, "What's ahead?", captions, EN/FR toggle
-- [ ] iPhone test over HTTPS with Bluetooth headphones; tune thresholds and tones
+```
+seewalk/
+├── server/                      # FastAPI
+│   ├── main.py                  # /analyze, /tts, /health
+│   ├── gemini.py                # Gemini Flash-Lite call + prompt
+│   ├── tts.py                   # ElevenLabs Flash + cache
+│   ├── schemas.py               # SceneResult, Hazard, request models
+│   ├── config.py                # env vars
+│   └── scripts/
+│       ├── check_connections.py # ping Gemini, ElevenLabs, Tiger Data
+│       ├── phrases.py           # EN/FR fallback phrase table
+│       ├── generate_clips.py    # build web/public/audio/{en,fr}
+│       └── eval_samples.py      # run samples/*.jpg through Gemini
+├── web/                         # React + Vite + TS
+│   ├── public/audio/{en,fr}/    # bundled ElevenLabs clips (offline fallback)
+│   └── src/
+│       ├── camera/              # camera + frame capture (Siddig)
+│       ├── api/                 # analyze(), tts()
+│       ├── alerts/              # filter: confidence, no-repeat, urgency (Aroha)
+│       ├── audio/               # tones, speech playback, clips.json (Aroha)
+│       ├── i18n/                # EN/FR strings
+│       └── pages/WalkMode.tsx   # main screen (Aroha)
+├── samples/                     # street photos for testing
+├── docs/                        # 3D model + images
+└── SEEWALK_SPEC.md              # original spec
+```
 
 ## Design principles
 
-1. **Speak less.** Short phrases; tones for common alerts.
+1. **Speak less.** Four words max; tones for direction.
 2. **Hazards first.** Danger → direction → description.
 3. **Never guess.** Low confidence means silence, or "Unclear" when asked.
 4. **Inform, never command.** Never say "safe to cross" or "go."
