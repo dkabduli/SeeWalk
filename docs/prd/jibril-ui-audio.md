@@ -6,7 +6,7 @@
 
 You own **everything the walker touches and hears**:
 - The **`web/` scaffold** everyone builds inside (**first thing Saturday**, everyone is waiting on it)
-- The **Walk Mode screen**: Start/Stop, EN/FR, "What's ahead?", big captions
+- The **Walk Mode screen**: Start/Stop, EN/FR, big captions, and **"What's ahead?" as the whole lower half of the screen** (easy to hit without looking), plus Abdul's voice command wired in
 - The **audio engine**: a tone in the correct ear, then River's voice
 - The **alert filter**: out of everything Gemini reports, decide what (if anything) to say
 
@@ -215,12 +215,13 @@ Quick sanity test: call `pickAlert` twice with the same fake result within 5 s. 
 ### Step 5: `web/src/pages/WalkMode.tsx` (the screen)
 
 ```tsx
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { tts } from "../api/client";
 import type { Hazard, Lang, SceneResult, SystemEvent } from "../api/types";
 import { audio } from "../audio/AudioEngine";
 import { fallbackClip, panFor, pickAlert } from "../alerts/pickAlert";
 import { useWalkLoop } from "../camera/useWalkLoop";
+import { createVoiceCommand } from "../camera/voiceCommand";
 import { strings } from "../i18n/strings";
 
 export default function WalkMode() {
@@ -259,9 +260,14 @@ export default function WalkMode() {
 
   const walk = useWalkLoop({ lang, onResult, onSystem });
 
+  // Voice command "What's ahead?" (Abdul's code). The ref keeps the latest whatsAhead.
+  const whatsAheadRef = useRef<() => void>(() => {});
+  const voice = useMemo(() => createVoiceCommand(() => whatsAheadRef.current()), []);
+
   async function toggle() {
     if (walking) {
       walk.stop();
+      voice.stop();
       setWalking(false);
       setStatus("idle");
       await audio.playClip(lang, "walk_stopped");
@@ -272,11 +278,13 @@ export default function WalkMode() {
     setWalking(true);
     setStatus("walking");
     await audio.playClip(lang, "walk_started");
+    voice.start(lang);                           // mic permission prompt on first use
     walk.start();
   }
 
   async function whatsAhead() {
-    const r = await walk.analyzeOnce().catch(() => null);
+    if (!walking) return;
+    const r = await walk.checkNow();             // jumps the queue; null if it failed
     if (!r || r.unclear) {
       setCaption(lang === "fr" ? "Incertain" : "Unclear");
       await audio.playClip(lang, "unclear");
@@ -285,11 +293,15 @@ export default function WalkMode() {
     const h = pickAlert(r, Date.now() + 60_000); // ignore the repeat rule: the user asked
     if (h) await speak(h);
   }
+  whatsAheadRef.current = whatsAhead;
 
   async function switchLang() {
     const next = lang === "en" ? "fr" : "en";
     setLang(next);
-    if (walking) await audio.preload(next);
+    if (walking) {
+      voice.start(next);                         // listen in the new language
+      await audio.preload(next);
+    }
   }
 
   return (
@@ -297,11 +309,12 @@ export default function WalkMode() {
       <video ref={walk.videoRef} playsInline muted autoPlay className="preview" aria-hidden="true" />
       <p className="status" role="status">{t[status]}</p>
       <p className="caption" aria-live="polite">{caption}</p>
-      <button className="primary" onClick={toggle}>{walking ? t.stop : t.start}</button>
       <div className="row">
-        <button onClick={whatsAhead} disabled={!walking}>{t.ahead}</button>
+        <button className="primary" onClick={toggle}>{walking ? t.stop : t.start}</button>
         <button onClick={switchLang} lang={lang === "en" ? "fr" : "en"}>{t.lang}</button>
       </div>
+      {/* The whole lower half of the screen: tap anywhere to ask */}
+      <button className="ahead-zone" onClick={whatsAhead} disabled={!walking}>{t.ahead}</button>
     </main>
   );
 }
@@ -315,7 +328,9 @@ In `index.css` (replace Vite's default):
 - Black background, white text, one strong accent (e.g. yellow `#FFD400`) for the Start button
 - `.primary`: full width, **≥ 120 px tall**, 28 px+ bold text
 - `.caption`: 36–44 px bold, centred. **This is what viewers read in the video**
-- `.preview`: the live camera, top ~40% of the screen, `object-fit: cover`. It looks great on camera
+- `.preview`: the live camera, top ~35% of the screen, `object-fit: cover`. It looks great on camera
+- `.ahead-zone`: **the entire lower half of the screen**, one big button reading "What's ahead?". Walkers can hit it without looking; with VoiceOver it's one clearly labelled button
+- The phone hangs **portrait** on a lanyard, so design for portrait only
 - All buttons ≥ 56 px tall, clear focus outline
 
 ### Step 7: Build without the backend
@@ -336,7 +351,8 @@ In `index.css` (replace Vite's default):
 - [ ] Same hazard isn't repeated within 5 s; urgent interrupts
 - [ ] FR toggle → French voice, French captions and labels
 - [ ] `no_connection` / `camera_blocked` → low tone + clip + status line
-- [ ] "What's ahead?" on a covered lens → "Unclear"
+- [ ] "What's ahead?" (tap the lower half, or say it) answers within ~2 s; on a covered lens → "Unclear"
+- [ ] Voice command started/stopped with the walk and switched with the language (if Abdul's testing says it's unreliable with Bluetooth, hide it and keep tap-anywhere)
 - [ ] VoiceOver pass done; PR merged
 
 ## 5. Gotchas

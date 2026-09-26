@@ -218,14 +218,16 @@ Snapshot in → Gemini → hazards out (`/analyze`); phrase in → ElevenLabs �
 ### Abdul: camera + capture
 Turn the live iPhone camera into a steady stream of snapshots and report when things break.
 - [ ] `types.ts` + `client.ts` pushed early; a mock API for testing without the backend
-- [ ] `captureFrame` (768 px JPEG + brightness), `useCamera`, `useWalkLoop` (one request in flight, 5 s timeout, previous frame included)
+- [ ] `captureFrame` (768 px JPEG + brightness), `useCamera` (portrait, lanyard), `useWalkLoop` (one request in flight, 5 s timeout, previous frame included, `checkNow()` for "What's ahead?")
+- [ ] Hands-free **"What's ahead?" voice command** (Safari speech recognition); tested with Bluetooth headphones
+- [ ] Stretch: COCO-SSD fast layer
 - [ ] `no_connection` / `connection_back` / `camera_blocked` events; screen stays awake
 - [ ] Also: share keys privately, **enable Gemini billing before filming**, merge PRs
 
 ### Jibril: phone UI + audio
 Everything the walker touches and hears.
 - [ ] **`web/` scaffold first**, with the `/api` proxy (keep `web/public/audio/` and `clips.json`)
-- [ ] `AudioEngine` (unlock on tap, panned tones, live speech, clip fallback), `pickAlert` (≥ 0.6, 5 s no-repeat, most urgent), `WalkMode` screen with big captions, EN/FR, "What's ahead?"
+- [ ] `AudioEngine` (unlock on tap, panned tones, live speech, clip fallback), `pickAlert` (≥ 0.6, 5 s no-repeat, most urgent), `WalkMode` screen with big captions, EN/FR, and the **whole lower half of the screen as "What's ahead?"**
 - [ ] System sounds for connection/camera events; VoiceOver pass
 
 ### Siddig: tunnel, video, Devpost
