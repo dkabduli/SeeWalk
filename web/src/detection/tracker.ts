@@ -28,6 +28,7 @@ interface Track {
   box: Detection["box"];
   seen: { t: number; area: number }[]; // recent sizes, to tell if it's getting closer
   lastSeen: number;
+  announced: 0 | 1 | 2; // most urgent level already reported for this object (0 = not yet)
 }
 
 const MATCH_IOU = 0.25;        // same object if the boxes overlap this much between checks
@@ -75,7 +76,7 @@ export class FastTracker {
         track.seen.push({ t, area });
         track.seen = track.seen.filter((s) => t - s.t <= APPROACH_WINDOW_MS * 2);
       } else {
-        track = { id: this.nextId++, type: d.type, box: d.box, seen: [{ t, area }], lastSeen: t };
+        track = { id: this.nextId++, type: d.type, box: d.box, seen: [{ t, area }], lastSeen: t, announced: 0 };
         this.tracks.push(track);
       }
 
@@ -83,7 +84,15 @@ export class FastTracker {
       const approaching = !!past && area >= past.area * APPROACH_GROWTH;
       const heightRatio = d.box[3] / frameH;
       const distance = heightRatio > CLOSE_HEIGHT ? "close" : heightRatio > NEAR_HEIGHT ? "near" : "far";
-      if (!approaching && distance !== "close") continue; // only what's coming at you, or right there
+      // Far objects are Gemini's job: tiny boxes jitter, which looks like "growing" (iPhone test:
+      // distant passers-by were flagged as approaching). Otherwise: only what's coming at you,
+      // or right there.
+      if (distance === "far" || (!approaching && distance !== "close")) continue;
+      const urgency: 1 | 2 = approaching && distance === "close" ? 1 : 2;
+      // Say each object once, and again only if it becomes urgent (iPhone test: one person
+      // walking past was announced as ahead, then left, then right).
+      if (track.announced !== 0 && urgency >= track.announced) continue;
+      track.announced = urgency;
 
       const cx = (d.box[0] + d.box[2] / 2) / frameW;
       const direction = cx < 1 / 3 ? "left" : cx > 2 / 3 ? "right" : "ahead";
@@ -93,7 +102,7 @@ export class FastTracker {
         direction,
         distance,
         approaching,
-        urgency: approaching && distance === "close" ? 1 : 2,
+        urgency,
         confidence: d.score,
         // Exactly the bundled clip's text, so Jibril's speak() plays the clip instantly (no /tts)
         phrase: (clips as Record<string, Record<Lang, string>>)[key][lang],

@@ -784,14 +784,15 @@ If 3 or 4 fails badly, **ship tap-anywhere only** and tell Jibril to hide the vo
 
 Gemini takes ~1.5 s. A bike covers ~8 m in that time. COCO-SSD runs **on the phone** and spots people, bikes and cars in ~25–30 ms per check (4 checks a second).
 
-**Verified:** 10 tracker tests (mutation-checked); headless Chrome with a fake camera feed of a bike getting closer → "Bike ahead ↗" (approaching), urgency 1 once close, 24–31 ms per check. The model took ~19 s to load cold, so **it's preloaded when the screen opens**; with preloading, Start waited 0.0 s and the first warning came ~1.5 s after Start.
+**Verified:** 11 tracker tests (mutation-checked); on Abdul's iPhone a teammate walking toward the phone from the left, right and straight on was caught with the right direction, approaching, and urgent when close (90–99 % confidence); headless Chrome with a fake camera feed of a bike getting closer → "Bike ahead ↗" (approaching), urgency 1 once close, 24–31 ms per check. The model took ~19 s to load cold, so **it's preloaded when the screen opens**; with preloading, Start waited 0.0 s and the first warning came ~1.5 s after Start.
 
 ### How it works
 1. `FastTracker` (pure logic, `web/src/detection/tracker.ts`) follows each person/bike/car between checks by box overlap, per type.
 2. **Approaching** = its box grew ≥ 20 % over ~0.6 s. **Close** = box taller than 60 % of the frame.
-3. It only reports things that are **approaching or close** (urgency 1 if both), with a direction from the box centre (thirds).
-4. Phrases are **exactly the bundled clip text** ("Bike on your left"), so Jibril's `speak()` plays the clip instantly instead of calling `/tts`.
-5. `fastLayer.ts` loads TensorFlow.js + COCO-SSD (`lite_mobilenet_v2`) with a dynamic import (a separate ~276 KB gzipped download, so other pages don't pay for it), runs every 250 ms on the camera video, skips while the page is hidden, and survives a failed detection.
+3. It only reports things that are **near or close AND (approaching or close)**, with urgency 1 if approaching and close, and a direction from the box centre (thirds). **Far objects are ignored**: on the iPhone, distant passers-by's small boxes jittered and looked like "approaching".
+4. **Each object is announced once**, and again only if it escalates to urgent. On the iPhone, one person walking past was announced as ahead, then left, then right.
+5. Phrases are **exactly the bundled clip text** ("Bike on your left"), so Jibril's `speak()` plays the clip instantly instead of calling `/tts`.
+6. `fastLayer.ts` loads TensorFlow.js + COCO-SSD (`lite_mobilenet_v2`) with a dynamic import (a separate ~276 KB gzipped download, so other pages don't pay for it), runs every 250 ms on the camera video, skips while the page is hidden, and survives a failed detection.
 
 ### Wiring (Jibril's WalkMode)
 ```ts
@@ -837,6 +838,7 @@ interface Track {
   box: Detection["box"];
   seen: { t: number; area: number }[]; // recent sizes, to tell if it's getting closer
   lastSeen: number;
+  announced: 0 | 1 | 2; // most urgent level already reported for this object (0 = not yet)
 }
 
 const MATCH_IOU = 0.25;        // same object if the boxes overlap this much between checks
@@ -884,7 +886,7 @@ export class FastTracker {
         track.seen.push({ t, area });
         track.seen = track.seen.filter((s) => t - s.t <= APPROACH_WINDOW_MS * 2);
       } else {
-        track = { id: this.nextId++, type: d.type, box: d.box, seen: [{ t, area }], lastSeen: t };
+        track = { id: this.nextId++, type: d.type, box: d.box, seen: [{ t, area }], lastSeen: t, announced: 0 };
         this.tracks.push(track);
       }
 
@@ -892,7 +894,15 @@ export class FastTracker {
       const approaching = !!past && area >= past.area * APPROACH_GROWTH;
       const heightRatio = d.box[3] / frameH;
       const distance = heightRatio > CLOSE_HEIGHT ? "close" : heightRatio > NEAR_HEIGHT ? "near" : "far";
-      if (!approaching && distance !== "close") continue; // only what's coming at you, or right there
+      // Far objects are Gemini's job: tiny boxes jitter, which looks like "growing" (iPhone test:
+      // distant passers-by were flagged as approaching). Otherwise: only what's coming at you,
+      // or right there.
+      if (distance === "far" || (!approaching && distance !== "close")) continue;
+      const urgency: 1 | 2 = approaching && distance === "close" ? 1 : 2;
+      // Say each object once, and again only if it becomes urgent (iPhone test: one person
+      // walking past was announced as ahead, then left, then right).
+      if (track.announced !== 0 && urgency >= track.announced) continue;
+      track.announced = urgency;
 
       const cx = (d.box[0] + d.box[2] / 2) / frameW;
       const direction = cx < 1 / 3 ? "left" : cx > 2 / 3 ? "right" : "ahead";
@@ -902,7 +912,7 @@ export class FastTracker {
         direction,
         distance,
         approaching,
-        urgency: approaching && distance === "close" ? 1 : 2,
+        urgency,
         confidence: d.score,
         // Exactly the bundled clip's text, so Jibril's speak() plays the clip instantly (no /tts)
         phrase: (clips as Record<string, Record<Lang, string>>)[key][lang],
