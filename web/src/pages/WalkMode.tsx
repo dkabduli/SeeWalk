@@ -1,22 +1,35 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { tts } from "../api/client";
+import { MOCK, tts } from "../api/client";
 import type { Hazard, Lang, SceneResult, SystemEvent } from "../api/types";
-import { audio } from "../audio/AudioEngine";
 import { fallbackClip, panFor, pickAlert } from "../alerts/pickAlert";
+import { audio } from "../audio/AudioEngine";
+import clips from "../audio/clips.json";
 import { useWalkLoop } from "../camera/useWalkLoop";
 import { createVoiceCommand } from "../camera/voiceCommand";
+import { sendToLaptop } from "../debug/laptopLog";
 import { strings } from "../i18n/strings";
-import { MOCK } from "../api/client";
-import clips from "../audio/clips.json";
 import "../styles/walk.css";
 
 type ClipTable = Record<string, Record<Lang, string>>;
+type Status = "idle" | "walking" | "noConn" | "blocked";
+
+/** What's on the alert panel: the phrase, where it is, and how serious. */
+interface Shown {
+  text: string;
+  direction?: Hazard["direction"];
+  level: "urgent" | "warning" | "info" | "system";
+}
+
+const ARROW: Record<Hazard["direction"], string> = { left: "←", ahead: "↑", right: "→" };
+const levelOf = (h: Hazard): Shown["level"] => (h.urgency === 1 ? "urgent" : h.urgency === 2 ? "warning" : "info");
+const log = (kind: string, text: string) =>
+  sendToLaptop({ at: new Date().toLocaleTimeString([], { hour12: false }), kind, text });
 
 export default function WalkMode() {
   const [lang, setLang] = useState<Lang>("en");
   const [walking, setWalking] = useState(false);
-  const [caption, setCaption] = useState("");
-  const [status, setStatus] = useState<"idle" | "walking" | "noConn" | "blocked">("idle");
+  const [shown, setShown] = useState<Shown | null>(null);
+  const [status, setStatus] = useState<Status>("idle");
   const t = strings[lang];
 
   // Only one alert at a time. Each alert gets an id; if a newer one starts (urgent, or the
@@ -31,9 +44,10 @@ export default function WalkMode() {
     const current = () => speechId.current === id;
     speaking.current = true;
     audio.stop();
+    log("say", `${h.phrase} (${h.type}/${h.direction}/${h.distance} u${h.urgency}${asked ? ", asked" : ""})`);
     try {
       const pan = panFor(h);
-      setCaption(h.phrase);
+      setShown({ text: h.phrase, direction: h.direction, level: levelOf(h) });
       await audio.playTone(pan, h.urgency === 1 ? 1200 : 1000);
       if (!current()) return;
       const key = fallbackClip(h);
@@ -60,8 +74,9 @@ export default function WalkMode() {
   }, [speak]);
 
   const onSystem = useCallback(async (e: SystemEvent) => {
+    log("system", e);
     setStatus(e === "no_connection" ? "noConn" : e === "camera_blocked" ? "blocked" : "walking");
-    setCaption(e === "connection_back" ? "" : strings[lang][e === "no_connection" ? "noConn" : "blocked"]);
+    setShown(e === "connection_back" ? null : { text: strings[lang][e === "no_connection" ? "noConn" : "blocked"], level: "system" });
     audio.stop();
     await audio.playTone(0, 440, 250);
     await audio.playClip(lang, e);
@@ -94,13 +109,22 @@ export default function WalkMode() {
     }
   }
 
-  // Voice command "What's ahead?" (Abdul's code). The ref keeps the latest whatsAhead.
+  // Voice command "SeeWalk, what's ahead?" (Abdul's code). The mic is ignored while SeeWalk is
+  // making sound, so it never hears (and pays Gemini to transcribe) its own voice.
   const whatsAheadRef = useRef<() => void>(() => {});
   const voiceRef = useRef<ReturnType<typeof createVoiceCommand> | null>(null);
-  const getVoice = () => (voiceRef.current ??= createVoiceCommand(() => whatsAheadRef.current()));
+  const getVoice = () => {
+    if (!voiceRef.current) {
+      const voice = createVoiceCommand(() => whatsAheadRef.current(), (msg) => log("voice", msg));
+      audio.onSounding = (on) => voice.setSpeaking(on);
+      voiceRef.current = voice;
+    }
+    return voiceRef.current;
+  };
 
   async function toggle() {
     if (walking) {
+      log("info", "stopped");
       fastGen.current++;
       fastStop.current?.();
       fastStop.current = null;
@@ -108,7 +132,7 @@ export default function WalkMode() {
       getVoice().stop();
       speechId.current++;                        // cancel any alert still on its way
       audio.stop();
-      setCaption("");
+      setShown(null);
       setWalking(false);
       setStatus("idle");
       await audio.playClip(lang, "walk_stopped");
@@ -119,6 +143,7 @@ export default function WalkMode() {
     getVoice().start(lang);                      // mic permission prompt on first use
     walk.start();                                // runs until Stop, don't await; camera prompt on first use
     void startFast(++fastGen.current);
+    log("info", `started (${lang}${MOCK ? ", MOCK" : ""})`);
     setWalking(true);
     setStatus("walking");
     await unlocking;
@@ -128,19 +153,20 @@ export default function WalkMode() {
 
   async function whatsAhead() {
     if (!walking) return;
+    log("ask", "What's ahead?");
     const answer = await walk.checkNow();        // the snapshot in flight, or a new one now
     audio.stop();                                // they asked: this answer comes first
     if (!answer.ok) {
       if (answer.reason === "stopped") return;
       speechId.current++;                        // cancel any alert still on its way
-      setCaption(strings[lang][answer.reason === "no_connection" ? "noConn" : "blocked"]);
+      setShown({ text: strings[lang][answer.reason === "no_connection" ? "noConn" : "blocked"], level: "system" });
       await audio.playClip(lang, answer.reason); // "No connection…" or "Camera blocked"
       return;
     }
     const r = answer.result;
     if (r.unclear) {
       speechId.current++;
-      setCaption(lang === "fr" ? "Incertain" : "Unclear");
+      setShown({ text: lang === "fr" ? "Incertain" : "Unclear", level: "info" });
       await audio.playClip(lang, "unclear");
       return;
     }
@@ -150,7 +176,8 @@ export default function WalkMode() {
     } else {
       speechId.current++;
       // They asked, so never answer with silence, but never promise "safe" or "clear" either
-      setCaption(lang === "fr" ? "Rien de détecté" : "Nothing detected");
+      setShown({ text: lang === "fr" ? "Rien de détecté" : "Nothing detected", level: "info" });
+      log("say", "Nothing detected (asked)");
       await audio.playClip(lang, "nothing_detected");
     }
   }
@@ -166,20 +193,43 @@ export default function WalkMode() {
   }
 
   return (
-    <main className="walk">
-      <header>
-        <h1>SeeWalk</h1>
-        {MOCK && <span className="mock-badge">MOCK DATA</span>}
+    <main className={`walk ${walking ? "is-walking" : "is-idle"}`}>
+      <header className="bar">
+        <span className="brand" aria-label="SeeWalk">See<b>Walk</b></span>
+        {MOCK && <span className="mock">MOCK</span>}
         <span className={`status ${status}`} role="status">{t[status]}</span>
-      </header>
-      <video ref={videoRef} playsInline muted autoPlay className="preview" aria-hidden="true" />
-      <p className="caption" aria-live="polite">{caption}</p>
-      <div className="row">
-        <button className={`primary${walking ? " on" : ""}`} onClick={toggle}>{walking ? t.stop : t.start}</button>
         <button className="lang" onClick={switchLang} lang={lang === "en" ? "fr" : "en"}>{t.lang}</button>
+      </header>
+
+      <div className="viewfinder">
+        <video ref={videoRef} playsInline muted autoPlay aria-hidden="true" />
+        {!walking && (
+          <div className="setup">
+            <p className="tagline">{t.tagline}</p>
+            <ol>
+              <li>{t.step1}</li>
+              <li>{t.step2}</li>
+              <li>{t.step3}</li>
+            </ol>
+          </div>
+        )}
       </div>
-      {/* The whole lower half of the screen: tap anywhere to ask */}
-      <button className="ahead-zone" onClick={whatsAhead} disabled={!walking}>{t.ahead}</button>
+
+      {walking && (
+        <section className={`alert ${shown?.level ?? "none"}`} aria-live="polite">
+          <span className="arrow" aria-hidden="true">{shown?.direction ? ARROW[shown.direction] : shown ? "•" : ""}</span>
+          <span className="text">{shown?.text ?? t.listening}</span>
+        </section>
+      )}
+
+      {walking ? (
+        <div className="controls">
+          <button className="ahead" onClick={whatsAhead}>{t.ahead}</button>
+          <button className="stop" onClick={toggle}>{t.stop}</button>
+        </div>
+      ) : (
+        <button className="start" onClick={toggle}>{t.start}</button>
+      )}
     </main>
   );
 }

@@ -5,6 +5,18 @@ export class AudioEngine {
   private ctx: AudioContext | null = null;
   private buffers = new Map<string, AudioBuffer>();
   private current: AudioBufferSourceNode | null = null;
+  private sounding = 0;
+
+  /** Called with true when SeeWalk starts making sound and false when it stops, so the voice
+   *  command can stop listening meanwhile (the mic otherwise hears SeeWalk's own voice). */
+  onSounding: ((on: boolean) => void) | null = null;
+
+  private soundStarted() {
+    if (this.sounding++ === 0) this.onSounding?.(true);
+  }
+  private soundEnded() {
+    if (this.sounding > 0 && --this.sounding === 0) this.onSounding?.(false);
+  }
 
   /** Call inside the Start button's tap handler. iOS blocks audio until a user gesture. */
   async unlock() {
@@ -56,7 +68,8 @@ export class AudioEngine {
     osc.connect(gain).connect(new StereoPannerNode(ctx, { pan })).connect(ctx.destination);
     osc.start(t);
     osc.stop(t + ms / 1000 + 0.02);
-    return new Promise((r) => setTimeout(r, ms + 40));
+    this.soundStarted();
+    return new Promise((r) => setTimeout(() => { this.soundEnded(); r(); }, ms + 40));
   }
 
   async playSpeech(mp3: ArrayBuffer, pan = 0) {
@@ -75,9 +88,11 @@ export class AudioEngine {
     const src = new AudioBufferSourceNode(ctx, { buffer });
     src.connect(new StereoPannerNode(ctx, { pan })).connect(ctx.destination);
     this.current = src;
+    this.soundStarted();
     return new Promise((resolve) => {
       src.onended = () => {
         if (this.current === src) this.current = null;
+        this.soundEnded();
         resolve();
       };
       src.start();

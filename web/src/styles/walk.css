@@ -1,64 +1,113 @@
-/* Walk Mode, in Jibril's SeeWalk look (tokens from index.css): teal gradient, black 3D pills,
-   serif headline, chunky green 3D button. Built for a phone hanging in portrait on a lanyard:
-   everything big, nothing that needs reading except the caption (which is for the video). */
+/* Walk Mode. Colours come from the white cane itself: near-black, white, and the red tip.
+   Flat, high contrast, readable in sunlight and on camera; no gradients, no decorative motion.
+   The screen covers the whole page (fixed), so the global page background doesn't show. */
 .walk {
-  display: flex; flex-direction: column; gap: 14px;
-  min-height: 100dvh; max-width: 720px; margin: 0 auto;
-  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
-}
-.walk > * { animation: rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
-.walk > :nth-child(2) { animation-delay: 0.08s; }
-.walk > :nth-child(3) { animation-delay: 0.16s; }
-.walk > :nth-child(4) { animation-delay: 0.24s; }
-.walk > :nth-child(5) { animation-delay: 0.32s; }
+  --bg: #0f1113;
+  --panel: #1a1d21;
+  --line: #2e3238;
+  --text: #f4f2ed;
+  --muted: #a3a8ae;
+  --white: #ffffff;
+  --red: #e0362c;      /* cane tip: urgent, Stop */
+  --amber: #f3b21b;    /* warning */
+  --steel: #7d8ea3;    /* information */
 
-.walk header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.walk header h1 { margin-right: auto; }
+  position: fixed; inset: 0; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 12px;
+  padding: max(12px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom));
+  background: var(--bg); color: var(--text);
+  font: 17px/1.35 -apple-system, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.walk button { font: inherit; border: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.walk button:focus-visible { outline: 3px solid var(--white); outline-offset: 3px; }
+
+/* Top bar: wordmark, status, language */
+.walk .bar { display: flex; align-items: center; gap: 10px; min-height: 40px; }
+.walk .brand {
+  margin-right: auto; font-size: 24px; font-weight: 800; letter-spacing: -0.4px;
+  display: inline-flex; align-items: center;
+}
+.walk .brand b { font-weight: 800; }
+.walk .brand::after {        /* the red tip of a white cane */
+  content: ""; width: 22px; height: 4px; margin-left: 8px; border-radius: 2px;
+  background: linear-gradient(90deg, var(--white) 0 60%, var(--red) 60%);
+}
+.walk .mock { background: var(--red); color: var(--white); font-size: 12px; font-weight: 800; padding: 3px 8px; border-radius: 6px; }
 .walk .status {
-  background: var(--ink); color: #fff; font-weight: 800; font-size: 15px;
-  padding: 6px 14px; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 15px; font-weight: 600; color: var(--muted);
 }
-.walk .status.noConn, .walk .status.blocked { background: #d7263d; animation: blink 1.2s ease-in-out infinite; }
-.walk .mock-badge {
-  background: #d7263d; color: #fff; font-weight: 800; font-size: 13px; padding: 4px 12px; border-radius: 999px;
+.walk .status::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+.walk .status.walking { color: var(--text); }
+.walk .status.walking::before { background: #3ecf6e; }
+.walk .status.noConn, .walk .status.blocked { color: var(--red); }
+.walk .status.noConn::before, .walk .status.blocked::before { background: var(--red); }
+.walk .lang {
+  padding: 8px 12px; border-radius: 10px; background: var(--panel); color: var(--text);
+  font-size: 15px; font-weight: 600; border: 1px solid var(--line);
 }
-@keyframes blink { 50% { opacity: 0.45; } }
 
-.walk .preview {
-  width: 100%; height: 34dvh; min-height: 200px; object-fit: cover;
-  background: rgb(0 0 0 / 0.18); border: 3px solid var(--ink); border-radius: 28px;
+/* Camera. Idle: the setup instructions sit on top of it. */
+.walk .viewfinder {
+  position: relative; border-radius: 16px; overflow: hidden;
+  background: #000; border: 1px solid var(--line);
+  height: 34dvh; min-height: 190px;
+}
+.walk.is-idle .viewfinder { flex: 1; height: auto; min-height: 320px; }
+.walk .viewfinder video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.walk .setup {            /* camera is off before Start, so the steps sit centred on black */
+  position: absolute; inset: 0; padding: 24px 20px;
+  display: flex; flex-direction: column; justify-content: center; gap: 22px;
+  background: var(--bg);
+}
+.walk .tagline { margin: 0; font-size: clamp(24px, 6.6vw, 32px); font-weight: 800; line-height: 1.15; letter-spacing: -0.3px; }
+.walk .setup ol { margin: 0; padding: 0; list-style: none; counter-reset: step; display: grid; gap: 10px; }
+.walk .setup li {
+  counter-increment: step; display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: start;
+  font-size: 16px; color: var(--text);
+}
+.walk .setup li::before {
+  content: counter(step); width: 26px; height: 26px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 14px; font-weight: 800;
+  background: var(--white); color: var(--bg);
 }
 
-/* What SeeWalk just said: big enough to read in the video */
-.walk .caption {
-  margin: 0; min-height: 2.6em; padding: 12px 18px;
-  background: var(--paper); border: 3px solid var(--ink); border-radius: 22px;
-  font-size: clamp(28px, 8vw, 40px); font-weight: 800; line-height: 1.15; text-align: center;
-  display: flex; align-items: center; justify-content: center;
-  animation: pop 0.25s ease-out both;
+/* The alert panel: what SeeWalk just said, where, and how serious (colour bar) */
+.walk .alert {
+  display: grid; grid-template-columns: 64px 1fr; align-items: center; gap: 12px;
+  min-height: 96px; padding: 12px 16px 12px 12px;
+  background: var(--panel); border: 1px solid var(--line); border-left: 8px solid var(--line);
+  border-radius: 14px;
 }
-.walk .caption:empty::before { content: "…"; opacity: 0.25; }
+.walk .alert .arrow { font-size: 52px; font-weight: 800; line-height: 1; text-align: center; }
+.walk .alert .text { font-size: clamp(26px, 7.4vw, 36px); font-weight: 800; line-height: 1.12; letter-spacing: -0.3px; }
+.walk .alert.none .text { font-size: 18px; font-weight: 500; color: var(--muted); }
+.walk .alert.urgent  { border-left-color: var(--red); }
+.walk .alert.urgent .arrow { color: var(--red); }
+.walk .alert.warning { border-left-color: var(--amber); }
+.walk .alert.warning .arrow { color: var(--amber); }
+.walk .alert.info    { border-left-color: var(--steel); }
+.walk .alert.system  { border-left-color: var(--red); background: #2a1715; }
 
-/* 3D buttons: a solid bottom edge that sinks when pressed */
-.walk .row { display: flex; gap: 12px; }
-.walk .row button {
-  border: 0; border-radius: 48px; font-weight: 800; min-height: 72px;
-  box-shadow: 0 8px 0 #000; transition: transform 0.12s ease, box-shadow 0.12s ease;
+/* Controls. Walking: the big "What's ahead?" target fills the bottom of the screen. */
+.walk .start {
+  min-height: 84px; border-radius: 16px; background: var(--white); color: var(--bg);
+  font-size: 28px; font-weight: 800; letter-spacing: -0.2px;
 }
-.walk .row button:active { transform: translateY(8px); box-shadow: 0 0 0 #000; }
-.walk .row .primary {
-  flex: 2; background: var(--ink); color: #fff;
-  font-size: clamp(24px, 7vw, 32px); text-transform: uppercase; letter-spacing: 1px;
+.walk .controls { flex: 1; display: grid; grid-template-rows: 1fr auto; gap: 10px; min-height: 30dvh; }
+.walk .ahead {
+  border-radius: 18px; background: var(--white); color: var(--bg);
+  font-size: clamp(32px, 9vw, 44px); font-weight: 800; letter-spacing: -0.5px;
 }
-.walk .row .primary.on { background: #d7263d; box-shadow: 0 8px 0 #7a0f1d; }
-.walk .row .lang { flex: 1; background: var(--paper); color: var(--ink); font-size: 18px; border: 3px solid var(--ink); }
+.walk .stop {
+  min-height: 60px; border-radius: 14px; background: transparent; color: var(--red);
+  border: 2px solid var(--red); font-size: 20px; font-weight: 800;
+}
+.walk .start:active, .walk .ahead:active { background: #dcdad4; }
+.walk .stop:active { background: rgb(224 54 44 / 0.12); }
 
-/* The whole lower part of the screen: tap anywhere to ask "What's ahead?" */
-.walk .ahead-zone {
-  flex: 1; min-height: 24dvh; border: 3px solid var(--ink); border-radius: 36px;
-  background: var(--green); color: var(--ink);
-  font-family: "Fraunces", Georgia, serif; font-size: clamp(36px, 10vw, 56px); font-weight: 800;
-  box-shadow: 0 10px 0 var(--green-edge); transition: transform 0.12s ease, box-shadow 0.12s ease;
+@media (prefers-reduced-motion: no-preference) {
+  .walk .alert .text { animation: walk-in 0.18s ease-out; }
 }
-.walk .ahead-zone:active:not(:disabled) { transform: translateY(10px); box-shadow: 0 0 0 var(--green-edge); }
-.walk .ahead-zone:disabled { opacity: 0.45; filter: grayscale(0.4); }
+@keyframes walk-in { from { opacity: 0.4; } to { opacity: 1; } }

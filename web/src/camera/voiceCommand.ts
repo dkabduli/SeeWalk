@@ -30,6 +30,16 @@ export class SpeechClipper {
     this.onClip = onClip;
   }
 
+  /** Throw away anything recorded so far (e.g. SeeWalk itself was talking). */
+  reset() {
+    this.pre = [];
+    this.preLen = 0;
+    this.rec = null;
+    this.recLen = 0;
+    this.loudLen = 0;
+    this.quietLen = 0;
+  }
+
   push(buf: Float32Array) {
     let sum = 0;
     for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
@@ -135,6 +145,19 @@ export function createVoiceCommand(onCommand: () => void, onDebug?: (msg: string
     typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia && typeof AudioContext !== "undefined";
   let session: Session | null = null;
   let lastFired = 0;
+  // While SeeWalk is speaking (and a moment after, for echo), the mic is ignored: in the iPhone
+  // test ~30 of ~200 clips were SeeWalk hearing itself ("Nothing detected. Stop lying ahead.").
+  const ECHO_TAIL_MS = 400;
+  let speaking = false;
+  let quietSince = 0;
+  let clipperRef: SpeechClipper | null = null;
+
+  /** Tell the listener when SeeWalk is making sound (AudioEngine.onSounding). */
+  function setSpeaking(on: boolean) {
+    speaking = on;
+    if (on) clipperRef?.reset();
+    else quietSince = Date.now();
+  }
 
   /** Call inside a tap: iOS only lets the audio context start from a user gesture. */
   function start(lang: Lang): boolean {
@@ -190,8 +213,11 @@ export function createVoiceCommand(onCommand: () => void, onDebug?: (msg: string
         .finally(() => { checking = false; });
     });
 
+    clipperRef = clipper;
     proc.onaudioprocess = (e) => {
-      if (s.active) clipper.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+      if (!s.active) return;
+      if (speaking || Date.now() - quietSince < ECHO_TAIL_MS) { clipper.reset(); return; }
+      clipper.push(new Float32Array(e.inputBuffer.getChannelData(0)));
     };
     source.connect(proc);
     proc.connect(ctx.destination); // Safari only runs the processor when it's connected; it outputs silence
@@ -204,5 +230,5 @@ export function createVoiceCommand(onCommand: () => void, onDebug?: (msg: string
     session = null;
   }
 
-  return { supported, start, stop };
+  return { supported, start, stop, setSpeaking };
 }
