@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ListenResult } from "../api/types";
 
-const listenCalls: { audio: string; lang: string; resolve: (r: ListenResult) => void; reject: (e: Error) => void }[] = [];
+const listenCalls: { audio: string; lang: string; image: string | null; resolve: (r: ListenResult) => void; reject: (e: Error) => void }[] = [];
 vi.mock("../api/client", () => ({
-  listen: vi.fn((audio: string, lang: string) =>
-    new Promise<ListenResult>((resolve, reject) => listenCalls.push({ audio, lang, resolve, reject }))),
+  listen: vi.fn((audio: string, lang: string, image: string | null) =>
+    new Promise<ListenResult>((resolve, reject) => listenCalls.push({ audio, lang, image, resolve, reject }))),
 }));
 
 import { createVoiceCommand, downsample, encodeWav, SpeechClipper } from "./voiceCommand";
@@ -141,10 +141,21 @@ describe("createVoiceCommand", () => {
     expect(listenCalls).toHaveLength(1);
     expect(listenCalls[0].lang).toBe("fr");
     expect(atob(listenCalls[0].audio).slice(0, 4)).toBe("RIFF"); // a real WAV file
-    listenCalls[0].resolve({ heard: "SeeWalk, qu'y a-t-il devant ?", command: true });
+    listenCalls[0].resolve({ heard: "SeeWalk, qu'y a-t-il devant ?", intent: "whats_ahead", answer: "", command: true });
     await flush();
     expect(onCommand).toHaveBeenCalledTimes(1);
-    expect(debug.some((m) => m.includes("→ trigger"))).toBe(true);
+    expect(debug.some((m) => m.includes("→ whats_ahead"))).toBe(true);
+  });
+
+  it("sends the camera frame with the clip and passes the command + answer through", async () => {
+    const onCommand = vi.fn();
+    createVoiceCommand(onCommand, undefined, () => "FRAME_B64").start("en");
+    await flush();
+    await say();
+    expect(listenCalls[0].image).toBe("FRAME_B64");
+    listenCalls[0].resolve({ heard: "SeeWalk, what am I holding?", intent: "holding", answer: "A water bottle", command: true });
+    await flush();
+    expect(onCommand).toHaveBeenCalledWith(expect.objectContaining({ intent: "holding", answer: "A water bottle" }));
   });
 
   it("does nothing for other speech", async () => {
@@ -152,7 +163,7 @@ describe("createVoiceCommand", () => {
     createVoiceCommand(onCommand).start("en");
     await flush();
     await say();
-    listenCalls[0].resolve({ heard: "Pothole ahead", command: false });
+    listenCalls[0].resolve({ heard: "Pothole ahead", intent: "none", answer: "", command: false });
     await flush();
     expect(onCommand).not.toHaveBeenCalled();
   });
@@ -165,7 +176,7 @@ describe("createVoiceCommand", () => {
     await say();                       // second sentence while the first is still being checked
     expect(listenCalls).toHaveLength(1);
     expect(debug.some((m) => m.includes("ignored"))).toBe(true);
-    listenCalls[0].resolve({ heard: "", command: false });
+    listenCalls[0].resolve({ heard: "", intent: "none", answer: "", command: false });
     await flush();
     await say();
     expect(listenCalls).toHaveLength(2);
@@ -176,10 +187,10 @@ describe("createVoiceCommand", () => {
     createVoiceCommand(onCommand).start("en");
     await flush();
     await say();
-    listenCalls[0].resolve({ heard: "SeeWalk, what's ahead?", command: true });
+    listenCalls[0].resolve({ heard: "SeeWalk, what's ahead?", intent: "whats_ahead", answer: "", command: true });
     await flush();
     await say();
-    listenCalls[1].resolve({ heard: "SeeWalk, what's ahead?", command: true });
+    listenCalls[1].resolve({ heard: "SeeWalk, what's ahead?", intent: "whats_ahead", answer: "", command: true });
     await flush();
     expect(onCommand).toHaveBeenCalledTimes(1);
   });
@@ -192,7 +203,7 @@ describe("createVoiceCommand", () => {
     await say();
     voice.stop();
     expect(track.stop).toHaveBeenCalled();
-    listenCalls[0].resolve({ heard: "SeeWalk, what's ahead?", command: true });
+    listenCalls[0].resolve({ heard: "SeeWalk, what's ahead?", intent: "whats_ahead", answer: "", command: true });
     await flush();
     expect(onCommand).not.toHaveBeenCalled();
   });

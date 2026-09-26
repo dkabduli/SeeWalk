@@ -93,9 +93,16 @@ export const strings: Record<Lang, Record<string, string>> = {
     tagline: "A white cane finds the ground. SeeWalk finds everything else.",
     step1: "Hang the phone on your chest, rear camera facing forward.",
     step2: "Put on open-ear or bone-conduction headphones.",
-    step3: "Tap Start. Any time, say “SeeWalk, what's ahead?” or tap the lower half of the screen.",
-    listening: "Listening for “SeeWalk, what's ahead?”",
+    step3: "Tap Start. Ask by saying “SeeWalk”, then your question, or tap What's ahead?",
+    listening: "Listening for “SeeWalk, …”",
     quiet: "Nothing to report",
+    youCanSay: "You can say",
+    cmdAhead: "“SeeWalk, what's ahead?”",
+    cmdHolding: "“SeeWalk, what am I holding?”",
+    cmdPath: "“SeeWalk, what's blocking my path?”",
+    cmdRead: "“SeeWalk, read this.”",
+    introShort: "Say “SeeWalk”, then your question",
+    crossRefusal: "I can't tell when it's safe to cross. Listen for traffic.",
   },
   fr: {
     start: "Commencer", stop: "Arrêter", ahead: "Qu'y a-t-il devant ?", lang: "English",
@@ -103,9 +110,16 @@ export const strings: Record<Lang, Record<string, string>> = {
     tagline: "La canne blanche trouve le sol. SeeWalk trouve tout le reste.",
     step1: "Portez le téléphone sur la poitrine, caméra arrière vers l'avant.",
     step2: "Mettez des écouteurs ouverts ou à conduction osseuse.",
-    step3: "Touchez Commencer. À tout moment, dites « SeeWalk, qu'y a-t-il devant ? » ou touchez le bas de l'écran.",
-    listening: "À l'écoute de « SeeWalk, qu'y a-t-il devant ? »",
+    step3: "Touchez Commencer. Pour demander, dites « SeeWalk », puis votre question, ou touchez Qu'y a-t-il devant ?",
+    listening: "À l'écoute de « SeeWalk, … »",
     quiet: "Rien à signaler",
+    youCanSay: "Vous pouvez dire",
+    cmdAhead: "« SeeWalk, qu'y a-t-il devant ? »",
+    cmdHolding: "« SeeWalk, qu'est-ce que je tiens ? »",
+    cmdPath: "« SeeWalk, qu'est-ce qui bloque mon chemin ? »",
+    cmdRead: "« SeeWalk, lis ceci. »",
+    introShort: "Dites « SeeWalk », puis votre question",
+    crossRefusal: "Je ne peux pas dire quand traverser. Écoutez la circulation.",
   },
 };
 ```
@@ -276,10 +290,11 @@ Quick sanity test: call `pickAlert` twice with the same fake result within 5 s. 
 ```tsx
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { MOCK, tts } from "../api/client";
-import type { Hazard, Lang, SceneResult, SystemEvent } from "../api/types";
+import type { Hazard, Lang, ListenResult, SceneResult, SystemEvent } from "../api/types";
 import { fallbackClip, panFor, pickAlert } from "../alerts/pickAlert";
 import { audio } from "../audio/AudioEngine";
 import clips from "../audio/clips.json";
+import { captureFrame } from "../camera/captureFrame";
 import { useWalkLoop } from "../camera/useWalkLoop";
 import { createVoiceCommand } from "../camera/voiceCommand";
 import { sendToLaptop } from "../debug/laptopLog";
@@ -300,6 +315,12 @@ const ARROW: Record<Hazard["direction"], string> = { left: "←", ahead: "↑", 
 const levelOf = (h: Hazard): Shown["level"] => (h.urgency === 1 ? "urgent" : h.urgency === 2 ? "warning" : "info");
 const log = (kind: string, text: string) =>
   sendToLaptop({ at: new Date().toLocaleTimeString([], { hour12: false }), kind, text });
+
+// The spoken introduction (the voice commands) plays on the first Start on this phone only;
+// after that Start just says "Walk mode on". Storage can be unavailable: then it always plays.
+const INTRO_KEY = "seewalk.introPlayed";
+const introPlayed = () => { try { return localStorage.getItem(INTRO_KEY) === "1"; } catch { return false; } };
+const markIntroPlayed = () => { try { localStorage.setItem(INTRO_KEY, "1"); } catch { /* private mode */ } };
 
 export default function WalkMode() {
   const [lang, setLang] = useState<Lang>("en");
@@ -385,13 +406,35 @@ export default function WalkMode() {
     }
   }
 
-  // Voice command "SeeWalk, what's ahead?" (Abdul's code). The mic is ignored while SeeWalk is
-  // making sound, so it never hears (and pays Gemini to transcribe) its own voice.
-  const whatsAheadRef = useRef<() => void>(() => {});
+  /** Say a free-form answer (from Gemini) in River's live voice; "Sorry, I can't tell" if empty. */
+  const sayAnswer = useCallback(async (text: string, kind: string) => {
+    const id = ++speechId.current;
+    audio.stop();
+    log("say", `${text || "(no answer)"} (${kind}, asked)`);
+    if (text) {
+      setShown({ text, level: "info" });
+      try {
+        const mp3 = await tts(text, lang);
+        if (speechId.current === id) await audio.playSpeech(mp3, 0);
+        return;
+      } catch { /* live voice failed: fall through */ }
+    }
+    if (speechId.current !== id) return;
+    setShown({ text: lang === "fr" ? "Désolé, je ne peux pas le dire" : "Sorry, I can't tell", level: "info" });
+    await audio.playClip(lang, "not_sure");
+  }, [lang]);
+
+  // Voice commands ("SeeWalk, …"): one Gemini call with the speech clip + the current frame.
+  // The mic is ignored while SeeWalk is making sound, so it never hears its own voice.
+  const onVoiceRef = useRef<(c: ListenResult) => void>(() => {});
   const voiceRef = useRef<ReturnType<typeof createVoiceCommand> | null>(null);
   const getVoice = () => {
     if (!voiceRef.current) {
-      const voice = createVoiceCommand(() => whatsAheadRef.current(), (msg) => log("voice", msg));
+      const voice = createVoiceCommand(
+        (c) => onVoiceRef.current(c),
+        (msg) => log("voice", msg),
+        () => { const v = videoRef.current; return v ? captureFrame(v)?.b64 ?? null : null; },
+      );
       audio.onSounding = (on) => voice.setSpeaking(on);
       voiceRef.current = voice;
     }
@@ -424,7 +467,14 @@ export default function WalkMode() {
     setStatus("walking");
     await unlocking;
     await audio.preload(lang);                   // ~1 s; the first snapshot takes longer anyway
-    await audio.playClip(lang, "walk_started");
+    if (introPlayed()) {
+      await audio.playClip(lang, "walk_started");
+    } else {
+      markIntroPlayed();
+      setShown({ text: t.introShort, level: "info" });
+      log("say", "intro");
+      await audio.playClip(lang, "intro");       // the voice commands, first Start only
+    }
   }
 
   async function whatsAhead() {
@@ -469,7 +519,22 @@ export default function WalkMode() {
     log("say", "Nothing detected (asked)");
     await audio.playClip(lang, "nothing_detected");
   }
-  useLayoutEffect(() => { whatsAheadRef.current = whatsAhead; });
+  async function onVoice(c: ListenResult) {
+    if (!walking) return;
+    log("ask", `voice: ${c.intent}`);
+    if (c.intent === "whats_ahead") return whatsAhead();
+    if (c.intent === "cross") {
+      // Never tells anyone it's safe to cross (spec). Fixed, pre-made answer.
+      speechId.current++;
+      audio.stop();
+      setShown({ text: t.crossRefusal, level: "system" });
+      log("say", "cross refusal");
+      await audio.playClip(lang, "cross_refusal");
+      return;
+    }
+    await sayAnswer(c.answer, c.intent);         // holding / path / read
+  }
+  useLayoutEffect(() => { onVoiceRef.current = onVoice; });
 
   async function switchLang() {
     const next = lang === "en" ? "fr" : "en";
@@ -499,6 +564,15 @@ export default function WalkMode() {
               <li>{t.step2}</li>
               <li>{t.step3}</li>
             </ol>
+            <div className="phrases">
+              <p>{t.youCanSay}</p>
+              <ul>
+                <li>{t.cmdAhead}</li>
+                <li>{t.cmdHolding}</li>
+                <li>{t.cmdPath}</li>
+                <li>{t.cmdRead}</li>
+              </ul>
+            </div>
           </div>
         )}
       </div>

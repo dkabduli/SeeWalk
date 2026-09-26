@@ -36,5 +36,5 @@ class AnalyzeRequest(BaseModel):
 
 
 class TTSRequest(BaseModel):
-    text: str = Field(min_length=1, max_length=80)
+    text: str = Field(min_length=1, max_length=400)  # "read this" answers can be ~25 words
     lang: Literal["en", "fr"] = "en"

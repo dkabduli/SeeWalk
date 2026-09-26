@@ -96,10 +96,15 @@ export interface SceneResult {
 
 export type SystemEvent = "no_connection" | "connection_back" | "camera_blocked";
 
-/** POST /listen: what the mic heard, and whether it was "SeeWalk, what's ahead?" */
+/** Voice commands ("SeeWalk, …"). whats_ahead and cross are answered by the app itself. */
+export type VoiceIntent = "none" | "whats_ahead" | "holding" | "path" | "read" | "cross";
+
+/** POST /listen: what the mic heard, which command it was, and Gemini's answer from the frame. */
 export interface ListenResult {
   heard: string;
-  command: boolean;
+  intent: VoiceIntent;
+  answer: string;   // for holding / path / read; "" otherwise
+  command: boolean; // intent !== "none"
 }
 ```
 
@@ -150,15 +155,16 @@ export async function tts(text: string, lang: Lang): Promise<ArrayBuffer> {
   }
 }
 
-/** Voice command: send a short speech clip (base64 WAV). Never mocked: needs the server. */
-export async function listen(audio: string, lang: Lang): Promise<ListenResult> {
+/** Voice command: a short speech clip (base64 WAV) plus the camera frame at that moment, so
+ *  Gemini can answer "what am I holding?" in the same call. Never mocked: needs the server. */
+export async function listen(audio: string, lang: Lang, image?: string | null): Promise<ListenResult> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 6000);
   try {
     const r = await fetch(`${BASE}/listen`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ audio, lang }),
+      body: JSON.stringify({ audio, lang, image: image ?? null }),
       signal: ctrl.signal,
     });
     if (!r.ok) throw new Error(`listen ${r.status}`);
@@ -489,12 +495,13 @@ Verified: unit tests (clip cutting, WAV format, the whole flow with a fake mic);
 
 ```ts
 import { listen } from "../api/client";
-import type { Lang } from "../api/types";
+import type { Lang, ListenResult } from "../api/types";
 
-// "SeeWalk, what's ahead?" without Safari's speech recognition (iOS answers `service-not-allowed`
+// Voice commands ("SeeWalk, what's ahead / what am I holding / what's blocking my path / read this /
+// is it safe to cross?") without Safari's speech recognition (iOS answers `service-not-allowed`
 // on some iPhones). We capture the mic ourselves, cut out the moments someone is speaking, and
-// send each clip to POST /listen, where Gemini decides whether it was the command (~1.5 s).
-// Silence is never sent.
+// send each clip WITH the current camera frame to POST /listen: one Gemini call works out the
+// command and answers it (~2 s). Silence is never sent.
 
 const TARGET_RATE = 16000;   // what we send: 16 kHz mono WAV (~32 KB per second)
 const PRE_ROLL_S = 0.4;      // keep a little audio from before the speech started ("See…")
@@ -629,8 +636,14 @@ export function toBase64(bytes: Uint8Array): string {
 
 interface Session { active: boolean; stop: () => void }
 
-/** onDebug (optional): reports what was heard, errors and state, for testing on the phone. */
-export function createVoiceCommand(onCommand: () => void, onDebug?: (msg: string) => void) {
+/** onCommand: called with the recognised command (intent !== "none").
+ *  onDebug (optional): reports what was heard, errors and state, for testing on the phone.
+ *  getFrame (optional): the current camera frame (base64 JPEG), sent with each clip. */
+export function createVoiceCommand(
+  onCommand: (command: ListenResult) => void,
+  onDebug?: (msg: string) => void,
+  getFrame?: () => string | null,
+) {
   const supported =
     typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia && typeof AudioContext !== "undefined";
   let session: Session | null = null;
@@ -690,13 +703,13 @@ export function createVoiceCommand(onCommand: () => void, onDebug?: (msg: string
       checking = true;
       const seconds = (clip.length / ctx.sampleRate).toFixed(1);
       onDebug?.(`speech ${seconds} s → checking`);
-      listen(toBase64(encodeWav(downsample(clip, ctx.sampleRate), TARGET_RATE)), lang)
+      listen(toBase64(encodeWav(downsample(clip, ctx.sampleRate), TARGET_RATE)), lang, getFrame?.() ?? null)
         .then((r) => {
           if (!s.active) return;
-          onDebug?.(`heard "${r.heard}"${r.command ? " → trigger" : ""}`);
-          if (r.command && Date.now() - lastFired > 3000) { // one question → one answer
+          onDebug?.(`heard "${r.heard}"${r.intent !== "none" ? ` → ${r.intent}${r.answer ? `: ${r.answer}` : ""}` : ""}`);
+          if (r.intent !== "none" && Date.now() - lastFired > 3000) { // one question → one answer
             lastFired = Date.now();
-            onCommand();
+            onCommand(r);
           }
         })
         .catch((e: Error) => onDebug?.(`error: ${e.message}`))

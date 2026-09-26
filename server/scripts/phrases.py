@@ -24,6 +24,18 @@ PHRASES: dict[str, dict[str, str]] = {
     # system
     "unclear": {"en": "Unclear", "fr": "Incertain"},
     "nothing_detected": {"en": "Nothing detected", "fr": "Rien de détecté"},
+    # voice commands
+    "intro": {
+        "en": "SeeWalk is on. I'll warn you about things in your path. To ask me something, say SeeWalk, "
+              "then: what's ahead, what am I holding, what's blocking my path, or read this.",
+        "fr": "SeeWalk est prêt. Je vous préviens des obstacles sur votre chemin. Pour me poser une question, "
+              "dites SeeWalk, puis : qu'y a-t-il devant, qu'est-ce que je tiens, qu'est-ce qui bloque mon chemin, ou lis ceci.",
+    },
+    "cross_refusal": {
+        "en": "I can't tell you when it's safe to cross. Listen for traffic and use your cane.",
+        "fr": "Je ne peux pas vous dire quand traverser. Écoutez la circulation et utilisez votre canne.",
+    },
+    "not_sure": {"en": "Sorry, I can't tell.", "fr": "Désolé, je ne peux pas le dire."},
     "no_connection": {"en": "No connection, I can't see right now", "fr": "Pas de connexion, je ne vois rien pour l'instant"},
     "connection_back": {"en": "Connection back", "fr": "Connexion rétablie"},
     "camera_blocked": {"en": "Camera blocked", "fr": "Caméra bloquée"},

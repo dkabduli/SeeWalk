@@ -65,8 +65,9 @@ export default function CameraLab() {
   const voiceRef = useRef<ReturnType<typeof createVoiceCommand> | null>(null);
   const getVoice = () =>
     (voiceRef.current ??= createVoiceCommand(
-      () => { void askRef.current("voice"); },
+      (c) => { if (c.intent === "whats_ahead") void askRef.current("voice"); else add("ask", `voice ${c.intent}: ${c.answer}`); },
       (msg) => add("voice", msg),
+      () => { const v = videoRef.current; return v ? captureFrame(v)?.b64 ?? null : null; },
     ));
 
   // Fast layer (COCO-SSD on the phone). Loaded on demand so other pages don't download TensorFlow.

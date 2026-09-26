@@ -72,9 +72,21 @@ Errors: `503` means Gemini failed or timed out. The phone skips that snapshot an
 
 Request: `{ "text": "Person ahead, left", "lang": "en" }` → Response `200` `audio/mpeg` (River's voice). `503` if ElevenLabs failed; the phone falls back to a bundled clip.
 
-### `POST /listen` (voice command)
+### `POST /listen` (voice commands)
 
-Request: `{ "audio": "<base64 16 kHz mono WAV>", "lang": "en" }` → Response `200` `{ "heard": "SeeWalk, what's ahead?", "command": true }`. `503` if Gemini failed. Lives in `server/listen.py` (a router `main.py` includes).
+Request: `{ "audio": "<base64 16 kHz mono WAV>", "lang": "en", "image": "<base64 JPEG of the current frame, or null>" }`
+→ `200` `{ "heard": "SeeWalk, what am I holding?", "intent": "holding", "answer": "A blue water bottle", "command": true }`. `503` if Gemini failed. One Gemini call transcribes, picks the command and answers from the frame (~2 s).
+
+| Say "SeeWalk, …" | `intent` | Who answers |
+|---|---|---|
+| what's ahead / in front of me | `whats_ahead` | the app (hazards first, then `summary`) |
+| what am I holding / what's in my hand | `holding` | Gemini `answer` → live ElevenLabs |
+| what's blocking my path / is my path clear | `path` | Gemini `answer` (never "clear" / "safe") |
+| read this / what does the sign say | `read` | Gemini `answer` (up to ~25 words) |
+| is it safe to cross | `cross` | fixed refusal clip `cross_refusal`: never a yes |
+| anything else, or no wake word | `none` | nothing |
+
+Gemini's intent is **double-checked in code** against its transcript (wake word + a keyword for that command), because in testing it let "What am I holding?" through without "SeeWalk" and turned SeeWalk's own "Crosswalk ahead" into "cross". Lives in `server/listen.py`.
 
 ### `GET /health` → `{ "ok": true }`
 
@@ -103,7 +115,7 @@ Request: `{ "audio": "<base64 16 kHz mono WAV>", "lang": "en" }` → Response `2
 | `stairs_down` | `stairs_down` |
 | `curb_or_dropoff` | `curb` |
 | `other` | none (only live TTS) |
-| system | `walk_started` `walk_stopped` `no_connection` `connection_back` `camera_blocked` `unclear` `nothing_detected` |
+| system | `walk_started` `walk_stopped` `no_connection` `connection_back` `camera_blocked` `unclear` `nothing_detected` `intro` `cross_refusal` `not_sure` |
 
 ### A fake result for building without the backend
 
