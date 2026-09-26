@@ -14,6 +14,12 @@ interface LogLine { at: string; kind: "result" | "system" | "ask" | "voice" | "i
 
 const time = () => new Date().toLocaleTimeString([], { hour12: false });
 
+/** Dev server only: mirror the log to web/lab-log.jsonl on the laptop. */
+function sendToLaptop(line: { at: string; kind: string; text: string }) {
+  if (!import.meta.env.DEV) return;
+  fetch("/__lablog", { method: "POST", body: JSON.stringify(line), keepalive: true }).catch(() => {});
+}
+
 function describe(r: SceneResult) {
   if (r.unclear) return "unclear";
   if (r.hazards.length === 0) return "nothing";
@@ -31,7 +37,9 @@ export default function CameraLab() {
   const lastResultAt = useRef<number | null>(null);
 
   const add = useCallback((kind: LogLine["kind"], text: string) => {
-    setLog((l) => [{ at: time(), kind, text }, ...l].slice(0, 80));
+    const line = { at: time(), kind, text };
+    setLog((l) => [line, ...l].slice(0, 80));
+    sendToLaptop(line);
   }, []);
 
   const onResult = useCallback((r: SceneResult) => {
@@ -93,7 +101,11 @@ export default function CameraLab() {
     const id = setInterval(() => {
       const v = videoRef.current;
       const f = v ? captureFrame(v, 64) : null;
-      if (f) setMeter({ b: Math.round(f.brightness), c: Math.round(f.contrast), covered: looksCovered(f) });
+      if (f) {
+        const m = { b: Math.round(f.brightness), c: Math.round(f.contrast), covered: looksCovered(f) };
+        setMeter(m);
+        sendToLaptop({ at: time(), kind: "meter", text: `brightness ${m.b} contrast ${m.c}${m.covered ? " COVERED" : ""}` });
+      }
     }, 500);
     return () => clearInterval(id);
   }, [walking, videoRef]);
