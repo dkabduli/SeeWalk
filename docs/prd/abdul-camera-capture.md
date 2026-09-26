@@ -17,7 +17,7 @@ You also handle keys, billing and merging PRs.
                                          │                        │ fails ×2
                                    lens covered ×2                └──────────────► onSystem("no_connection") ──► Jibril
                                          └────────────────────────────────────────► onSystem("camera_blocked")
-"What's ahead?" (voice) or tap ──► checkNow() ──► next snapshot immediately ──► result to the caller ──► Jibril speaks it
+"What's ahead?" (voice) or tap ──► checkNow() ──► snapshot in flight, or a new one now ──► result to the caller ──► Jibril speaks it
 ```
 
 **It's snapshots, not video.** The `<video>` element shows the live feed on screen, and we copy one frame at a time to a canvas. Nothing is saved to the camera roll.
@@ -28,7 +28,7 @@ You also handle keys, billing and merging PRs.
 |---|---|
 | How the phone is worn | **Portrait, on a chest lanyard.** Snapshots come out 576×768 |
 | "What's ahead?" trigger | **Voice command** (your code) + **tap anywhere on the lower half of the screen** (Jibril's UI). Real Siri can't control a web app; that would need a native iOS app |
-| "What's ahead?" while the loop runs | **Jump the queue**: skip the wait and take the next snapshot now. Still one request at a time |
+| "What's ahead?" while the loop runs | **Fastest answer**: if a snapshot is already on its way to Gemini, answer with that one (~0.1–1.3 s); if the loop is waiting, skip the wait and take one now. Still one request at a time |
 | Voice trigger phrase | **"What's ahead?"** (FR: "Qu'y a-t-il devant ?"), no wake word |
 | "What's ahead?" finds nothing | Say **"Nothing detected"** / "Rien de détecté" (never "clear" or "safe"). Jibril plays the `nothing_detected` clip |
 | Snapshot interval | **1.5 s** for filming (billing on), 5 s during development |
@@ -326,7 +326,6 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
 
     while (alive()) {
       const roundStart = performance.now();
-      const asked = askers.current.splice(0); // people waiting on THIS snapshot
       let answer: CheckResult = { ok: false, reason: "camera_blocked" };
       const frame = captureFrame(camera.videoRef.current!);
 
@@ -345,8 +344,9 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
           if (fails >= 2) onSystemRef.current("connection_back");
           fails = 0;
           answer = { ok: true, result };
-          // If someone asked "What's ahead?", they get this result and speak it themselves
-          if (asked.length === 0) onResultRef.current(result);
+          // Anyone who asked while this was in flight gets THIS result (fastest answer) and
+          // speaks it themselves, so the loop doesn't speak it too
+          if (askers.current.length === 0) onResultRef.current(result);
         } catch {
           if (!alive()) break;
           fails += 1;
@@ -361,7 +361,7 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
         }
         prevFrame.current = { b64: frame.b64, at: frame.at };
       }
-      asked.forEach((resolve) => resolve(answer));
+      askers.current.splice(0).forEach((resolve) => resolve(answer));
 
       // Wait out the interval, unless "What's ahead?" cuts it short
       const wait = INTERVAL_MS - (performance.now() - roundStart);
@@ -397,7 +397,7 @@ Rules baked in:
 - **Stop → Start quickly can't create two loops**: each start gets a generation number, and an old loop exits as soon as it notices it's stale (it also never fires events after Stop).
 - **Camera permission denied → `camera_blocked`**, not a silent failure.
 - `prevFrame` is sent so Gemini can see what's **approaching**, but only if it's < 4 s old (after an outage an old frame would fake "motion").
-- **"What's ahead?" jumps the queue** and gets a clear answer: a result, or *why* there isn't one (`no_connection` / `camera_blocked` / `stopped`), so Jibril can say "No connection" instead of a misleading "Unclear".
+- **"What's ahead?" gets the fastest honest answer**: the snapshot already in flight if there is one (taken ≤ ~1.3 s before the question), otherwise a new one right away. It also says *why* when there's no result (`no_connection` / `camera_blocked` / `stopped`), so Jibril can say "No connection" instead of a misleading "Unclear".
 - A "What's ahead?" result goes **only to the caller**, so it isn't spoken twice.
 - Coming back to Safari re-takes the wake lock and restarts the camera if iOS stopped it.
 
@@ -485,7 +485,7 @@ If 3 or 4 fails badly, **ship tap-anywhere only** and tell Jibril to hide the vo
 3. In the Mac's Web Inspector console you should see a `SceneResult` each interval (add a `console.log` in `onResult` while testing).
 4. **Airplane mode** → after 2 snapshots → `no_connection`. Off again → `connection_back`.
 5. Cover the lens with a finger → `camera_blocked`. **Log `brightness` and `contrast` while you do it** and adjust `looksCovered` so a finger triggers it but a plain wall, sky or road doesn't.
-6. Say "What's ahead?" and tap the lower half of the screen → an answer within ~2 s, even mid-interval.
+6. Say "What's ahead?" and tap the lower half of the screen → an answer within ~1.5 s, even mid-interval.
 7. Tap Stop then Start quickly several times → the console shows only one request at a time.
 8. Deny camera permission once (Settings → Safari → Camera → Deny) → tapping Start says "Camera blocked" instead of doing nothing.
 9. Press the side button (screen off), wait 5 s, unlock → SeeWalk resumes on its own (camera + snapshots).
@@ -518,7 +518,7 @@ If 3 or 4 fails badly, **ship tap-anywhere only** and tell Jibril to hide the vo
 - [ ] Camera permission denied → `camera_blocked` (never a silent Start)
 - [ ] Rapid Stop/Start never creates two loops; nothing fires after Stop
 - [ ] Screen off → back on → SeeWalk resumes by itself
-- [ ] "What's ahead?" (voice **and** tap) answers within ~2 s without doubling requests
+- [ ] "What's ahead?" (voice **and** tap) answers within ~1.5 s without doubling requests
 - [ ] Voice command tested with Bluetooth headphones; either works or is switched off
 - [ ] Screen stays awake while walking
 - [ ] PR merged into `main`

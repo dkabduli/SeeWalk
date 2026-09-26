@@ -56,6 +56,17 @@ export default defineConfig({
       },
     },
   },
+  // Same settings for `npm run preview` (the production build we film with)
+  preview: {
+    host: true,
+    allowedHosts: true,
+    proxy: {
+      "/api": {
+        target: "http://localhost:8000",
+        rewrite: (p) => p.replace(/^\/api/, ""),
+      },
+    },
+  },
 });
 ```
 
@@ -288,7 +299,7 @@ export default function WalkMode() {
 
   async function whatsAhead() {
     if (!walking) return;
-    const answer = await walk.checkNow();        // jumps the queue
+    const answer = await walk.checkNow();        // the snapshot in flight, or a new one now
     audio.stop();                                // they asked: this answer comes first
     if (!answer.ok) {
       if (answer.reason === "stopped") return;

@@ -56,10 +56,20 @@ Scout locations on campus Saturday morning: a quiet path, a real stop sign, a pa
 - [ ] **Second phone to film** the walker (1080p/30 fps, landscape)
 - [ ] **Screen recording on the demo iPhone** (Control Center → Screen Recording). It captures the app's screen **and SeeWalk's audio**; you'll sync it with the filming phone in the edit
 - [ ] Both phones charged, plus a power bank
+- [ ] Demo iPhone: Auto-Lock → Never
 - [ ] A chair/bin for the obstacle scene; a teammate to walk toward the camera
 
 ### Step 4: Film (Saturday 4:30–6:45 PM: daylight only, sunset ~7 PM)
 - Abdul turns on **Gemini billing** first and sets the snapshot interval to 1.5 s (free-tier limits would cause gaps mid-take)
+- **Film the production build, not the dev server** (faster on the phone, and nobody's file save can reload the page mid-take). On the server laptop:
+  ```bash
+  cd web
+  echo "VITE_FRAME_INTERVAL_MS=1500" > .env.local   # baked in at build time
+  npm run build && npm run preview                 # serves on port 4173
+  cloudflared tunnel --url http://localhost:4173   # new URL: re-share it
+  ```
+  (Aroha's `uvicorn` must be running too; the preview server forwards `/api` to it.)
+- On the demo iPhone: **Settings → Display & Brightness → Auto-Lock → Never** (if the screen locks, Safari freezes SeeWalk silently)
 - The laptop running the server + tunnel stays online (campus Wi-Fi or a hotspot)
 - **3+ takes per scene.** Keep the good ones and note the timestamps
 - Film wide (see the walker + surroundings) **and** close (the phone screen with the caption)
