@@ -203,7 +203,7 @@ Each person has a **PRD in [`docs/prd/`](docs/prd/)** that walks them through th
 | Person | Role | Owns | PRD |
 |---|---|---|---|
 | **Aroha** | AI + backend | `server/` | [aroha-ai-backend.md](docs/prd/aroha-ai-backend.md) |
-| **Abdul** | Camera + capture, repo owner | `web/src/api/`, `web/src/camera/` | [abdul-camera-capture.md](docs/prd/abdul-camera-capture.md) |
+| **Abdul** | Camera + capture | `web/src/api/`, `web/src/camera/` | [abdul-camera-capture.md](docs/prd/abdul-camera-capture.md) |
 | **Jibril** | Phone UI + audio | `web/` scaffold, `pages/`, `audio/`, `alerts/`, `i18n/` | [jibril-ui-audio.md](docs/prd/jibril-ui-audio.md) |
 | **Siddig** | Tunnel, video, Devpost | tunnel, `docs/shot-list.md`, deploy | [siddig-deploy-video.md](docs/prd/siddig-deploy-video.md) |
 
@@ -215,12 +215,12 @@ Snapshot in → Gemini → hazards out (`/analyze`); phrase in → ElevenLabs �
 - [ ] `eval_samples.py` on the team's photos → tune the prompt until nothing is invented and median ≤ 1.5 s
 - [ ] French phrases correct; Gemini failures return `503`, never crash
 
-### Abdul: camera + capture (repo owner)
+### Abdul: camera + capture
 Turn the live iPhone camera into a steady stream of snapshots and report when things break.
 - [ ] `types.ts` + `client.ts` pushed early; a mock API for testing without the backend
 - [ ] `captureFrame` (768 px JPEG + brightness), `useCamera`, `useWalkLoop` (one request in flight, 5 s timeout, previous frame included)
 - [ ] `no_connection` / `connection_back` / `camera_blocked` events; screen stays awake
-- [ ] Repo owner: share keys privately, **enable Gemini billing before filming**, merge PRs
+- [ ] Also: share keys privately, **enable Gemini billing before filming**, merge PRs
 
 ### Jibril: phone UI + audio
 Everything the walker touches and hears.

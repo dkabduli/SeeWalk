@@ -5,7 +5,7 @@ One PRD per person. Each one walks you through your piece step by step, with cod
 | Person | Role | PRD |
 |---|---|---|
 | **Aroha** | AI + backend | [aroha-ai-backend.md](aroha-ai-backend.md) |
-| **Abdul** | Camera + capture (+ repo owner) | [abdul-camera-capture.md](abdul-camera-capture.md) |
+| **Abdul** | Camera + capture | [abdul-camera-capture.md](abdul-camera-capture.md) |
 | **Jibril** | Phone UI + audio | [jibril-ui-audio.md](jibril-ui-audio.md) |
 | **Siddig** | Tunnel, deploy, video, Devpost | [siddig-deploy-video.md](siddig-deploy-video.md) |
 

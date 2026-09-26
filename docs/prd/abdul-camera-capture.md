@@ -6,7 +6,7 @@
 
 You own the **eyes** of the app: turn the iPhone's live rear camera into a steady stream of snapshots, send each one to `/analyze`, hand the results to Jibril's UI, and **notice when something breaks** (no connection, camera blocked).
 
-You also own the shared **TypeScript types and API client** that everyone imports, and you're the **repo owner** (keys, billing, merging PRs).
+You also own the shared **TypeScript types and API client** that everyone imports. You also handle keys, billing and merging PRs.
 
 ```
 <video> live feed ──every ~1.5 s──► captureFrame() ──► analyze(image, prevImage, lang) ──► onResult(result)  → Jibril
@@ -307,7 +307,7 @@ Key rules baked in: **one request in flight**, 5 s timeout, the next snapshot wa
 
 (Enable the Develop menu: Mac Safari → Settings → Advanced → "Show features for web developers". On the iPhone: Settings → Safari → Advanced → Web Inspector on.)
 
-### Step 8: Repo-owner duties
+### Step 8: Team duties
 - [ ] Send the ElevenLabs key privately to the team (group DM, not public channels)
 - [ ] **Before filming (Sat ~4 PM): enable billing** on the demo Gemini key (Google Cloud $300 trial or an MLH credit code), then set `VITE_FRAME_INTERVAL_MS=1500`
 - [ ] Review PRs into `main`: check the contract wasn't changed silently, then merge
