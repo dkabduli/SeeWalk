@@ -20,11 +20,11 @@ flowchart LR
 
 ### 3D model
 
-An interactive 3D version of this flow lives at [`docs/signal-path-3d.html`](docs/signal-path-3d.html). Open it locally in any browser (drag to turn, scroll to zoom):
+[![SeeWalk signal path in 3D: Camera → Gemini → SeeWalk → ElevenLabs → Headphones](docs/img/signal-path-3d.png)](https://raw.githack.com/dkabduli/SeeWalk/main/docs/signal-path-3d.html)
 
-```bash
-open docs/signal-path-3d.html
-```
+**[🦯 Open the 3D model →](https://raw.githack.com/dkabduli/SeeWalk/main/docs/signal-path-3d.html)**
+
+Drag to turn, scroll to zoom. Source: [`docs/signal-path-3d.html`](docs/signal-path-3d.html).
 
 ---
 
