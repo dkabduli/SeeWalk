@@ -272,6 +272,17 @@ async def tts(req: TTSRequest):
 
 Never log the image itself: it's huge, and privacy matters (frames are processed and discarded).
 
+### Step 7b: Include the voice-command router
+
+Abdul already wrote and tested `server/listen.py` (`POST /listen`: Gemini decides whether a speech clip was "SeeWalk, what's ahead?"). Add two lines to `main.py`:
+
+```python
+from listen import router as listen_router
+app.include_router(listen_router)
+```
+
+Then delete `server/listen_app.py` (the stand-in Abdul used for testing before `main.py` existed).
+
 ### Step 8: Run and test
 
 ```bash

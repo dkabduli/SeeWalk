@@ -1,4 +1,4 @@
-import type { Lang, SceneResult } from "./types";
+import type { Lang, ListenResult, SceneResult } from "./types";
 import { mockAnalyze } from "./mock";
 
 const BASE = "/api"; // Vite proxies /api → http://localhost:8000
@@ -35,6 +35,24 @@ export async function tts(text: string, lang: Lang): Promise<ArrayBuffer> {
     });
     if (!r.ok) throw new Error(`tts ${r.status}`);
     return await r.arrayBuffer();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Voice command: send a short speech clip (base64 WAV). Never mocked: needs the server. */
+export async function listen(audio: string, lang: Lang): Promise<ListenResult> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 6000);
+  try {
+    const r = await fetch(`${BASE}/listen`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ audio, lang }),
+      signal: ctrl.signal,
+    });
+    if (!r.ok) throw new Error(`listen ${r.status}`);
+    return await r.json();
   } finally {
     clearTimeout(timer);
   }

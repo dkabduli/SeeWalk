@@ -6,7 +6,7 @@
 
 You own **everything the walker touches and hears**:
 - The **`web/` scaffold** everyone builds inside (**first thing Saturday**, everyone is waiting on it)
-- The **Walk Mode screen**: Start/Stop, EN/FR, big captions, and **"What's ahead?" as the whole lower half of the screen** (easy to hit without looking), plus Abdul's voice command wired in
+- The **Walk Mode screen**: Start/Stop, EN/FR, big captions, and **"What's ahead?" as the whole lower half of the screen** (easy to hit without looking), plus Abdul's voice command ("SeeWalk, what's ahead?") wired in
 - The **audio engine**: a tone in the correct ear, then River's voice
 - The **alert filter**: out of everything Gemini reports, decide what (if anything) to say
 
@@ -415,6 +415,10 @@ In `index.css` (replace Vite's default):
 ### Step 8: VoiceOver pass (iPhone: Settings → Accessibility → VoiceOver)
 - Swipe through the screen: Start is first, every button reads a clear label, the caption is announced when it changes
 - Double-tap Start works; no custom gestures anywhere
+
+### Step 9: Plug in Abdul's fast layer (instant person/bike/car warnings)
+
+Built and tested. See [Abdul's PRD §9](abdul-camera-capture.md#9-stretch-coco-ssd-fast-layer--built) for the 3 lines: `preloadFastLayer()` when WalkMode mounts, `startFastLayer(video, () => lang, onResult)` after `walk.start()`, and call the returned stop function on Stop. Its phrases match the bundled clips exactly, so your `speak()` plays them instantly.
 
 ## 4. Done when
 
