@@ -182,33 +182,32 @@ Silence must never mean "all clear" by accident.
 
 Each person owns their own folders, so we don't step on each other. Build against the **data contracts** above and the pieces will fit together.
 
-### Abdul: AI + backend (+ merges into `main`)
+### Aroha: AI + backend
 - `server/gemini.py`, `schemas.py`, `main.py`: `/analyze`, `/health`
 - `server/tts.py` + `/tts`: ElevenLabs Flash streaming with cache
 - `server/scripts/eval_samples.py`: run the team's street photos through Gemini, tune the prompt, confirm speed and accuracy
-- Enable Gemini billing on the demo key before filming
-- Review and merge everyone's PRs
 
-### Aroha: phone UI + audio
+### Abdul: camera + capture (+ repo owner)
+- `web/src/camera/`: rear camera on iPhone Safari, frame capture (768 px JPEG), one request in flight, `VITE_FRAME_INTERVAL_MS` (1500 demo / 5000–6000 during dev)
+- Fail-out-loud detection: camera stopped/covered, 2 failed requests
+- **Stretch:** COCO-SSD fast layer for people/bikes/cars, or the "Ask" voice-question button
+- Repo owner: holds the API keys, enables Gemini billing on the demo key before filming, reviews and merges everyone's PRs
+
+### Jibril: phone UI + audio
 - **First thing Saturday:** scaffold `web/` (React + Vite + TS) and push it, since everyone builds inside it
 - Walk Mode screen: big Start/Stop button, EN/FR toggle, **"What's ahead?"** button, large captions of what was said (these show up in the video)
 - `web/src/audio/`: unlock audio on the Start tap (iOS), panned tones, play `/tts` audio, fall back to bundled clips
 - `web/src/alerts/`: confidence ≥ 0.6, 5 s no-repeat, most urgent wins
 - VoiceOver check
 
-### Siddig: camera + capture (+ fast-layer stretch)
-- `web/src/camera/`: rear camera on iPhone Safari, frame capture (768 px JPEG), one request in flight, `VITE_FRAME_INTERVAL_MS` (1500 demo / 5000–6000 during dev)
-- Fail-out-loud detection: camera stopped/covered, 2 failed requests
-- **Stretch:** COCO-SSD fast layer for people/bikes/cars, or the "Ask" voice-question button
-
-### Jibril: deploy + video + Devpost
+### Siddig: deploy + video + Devpost
 - HTTPS tunnel so the team's iPhones can reach the laptop server
 - **Shot list and filming**: quiet campus path, phone on a chest strap, open-ear headphones, captions on screen. Scenes: person approaching, stop sign, crosswalk, pothole/curb, chair in the path, an "Unclear" moment
 - Edit the ~2 min video, write the Devpost, add everyone, submit
 - **Stretch:** Vultr + GoDaddy domain deploy; Tiger Data hazard map
 
 ### Everyone
-- 3–4 chest-height photos each (curbs, crosswalks, stop signs, stairs, potholes, branches) → send to Abdul for `samples/`
+- 3–4 chest-height photos each (curbs, crosswalks, stop signs, stairs, potholes, branches) → send to Aroha for `samples/`
 - Work on your branch (`Abduls-Work`, `Arohas-Work`, `Siddigs-Work`, `Jibrls-Work`), open a PR into `main` when something works, commit often (judges read the history)
 
 ---
@@ -275,12 +274,12 @@ seewalk/
 ├── web/                         # React + Vite + TS
 │   ├── public/audio/{en,fr}/    # bundled ElevenLabs clips (offline fallback)
 │   └── src/
-│       ├── camera/              # camera + frame capture (Siddig)
+│       ├── camera/              # camera + frame capture (Abdul)
 │       ├── api/                 # analyze(), tts()
-│       ├── alerts/              # filter: confidence, no-repeat, urgency (Aroha)
-│       ├── audio/               # tones, speech playback, clips.json (Aroha)
+│       ├── alerts/              # filter: confidence, no-repeat, urgency (Jibril)
+│       ├── audio/               # tones, speech playback, clips.json (Jibril)
 │       ├── i18n/                # EN/FR strings
-│       └── pages/WalkMode.tsx   # main screen (Aroha)
+│       └── pages/WalkMode.tsx   # main screen (Jibril)
 ├── samples/                     # street photos for testing
 ├── docs/                        # 3D model + images
 └── SEEWALK_SPEC.md              # original spec
