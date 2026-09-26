@@ -67,7 +67,10 @@ export default function CameraLab() {
   // Created on first use (inside a tap), so no ref is read during render
   const voiceRef = useRef<ReturnType<typeof createVoiceCommand> | null>(null);
   const getVoice = () =>
-    (voiceRef.current ??= createVoiceCommand(() => { void askRef.current("voice"); }));
+    (voiceRef.current ??= createVoiceCommand(
+      () => { void askRef.current("voice"); },
+      (msg) => add("voice", msg),
+    ));
 
   function toggle() {
     if (walking) {

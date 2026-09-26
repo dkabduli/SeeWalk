@@ -32,5 +32,6 @@ export function captureFrame(video: HTMLVideoElement, maxEdge = 768): Frame | nu
 
 /** A finger over the lens isn't black: auto-exposure turns it into a flat, dim, reddish blur.
  *  So "covered" = very dark, OR flat and dim. A bright blank wall stays "not covered".
- *  Tune both numbers on the real iPhone (log them while covering/uncovering the lens). */
-export const looksCovered = (f: Frame) => f.brightness < 12 || (f.contrast < 8 && f.brightness < 90);
+ *  Measured on Abdul's iPhone (Sept 26): finger = brightness 28–56, contrast 6–10;
+ *  normal scenes = contrast 24+; bright blank wall/window = brightness 250+, contrast 1–7. */
+export const looksCovered = (f: Frame) => f.brightness < 12 || (f.contrast < 12 && f.brightness < 90);

@@ -8,7 +8,8 @@ const TRIGGERS: Record<Lang, string[][]> = {
   fr: [["qu'y a", "devant"], ["qu'est-ce", "devant"], ["quoi", "devant"]],
 };
 
-export function createVoiceCommand(onCommand: () => void) {
+/** onDebug (optional): reports what was heard, errors and restarts, for testing on the phone. */
+export function createVoiceCommand(onCommand: () => void, onDebug?: (msg: string) => void) {
   const Recognition =
     (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
   let rec: any = null;
@@ -26,6 +27,7 @@ export function createVoiceCommand(onCommand: () => void) {
     rec.onresult = (e: any) => {
       const text = e.results[e.results.length - 1][0].transcript.toLowerCase().replace(/[’`]/g, "'");
       const hit = TRIGGERS[lang].some((words) => words.every((w) => text.includes(w)));
+      onDebug?.(`heard "${text}"${hit ? " → trigger" : ""}`);
       if (hit && Date.now() - lastFired > 3000) { // one question → one answer
         lastFired = Date.now();
         onCommand();
@@ -33,11 +35,14 @@ export function createVoiceCommand(onCommand: () => void) {
     };
     // iOS stops listening after silence or after we play audio: restart it
     rec.onend = () => {
+      onDebug?.(active ? "ended, restarting" : "ended");
       if (active) setTimeout(() => { try { rec?.start(); } catch { /* already running */ } }, 300);
     };
+    rec.onstart = () => onDebug?.("listening");
     rec.onerror = (e: any) => {
       if (e.error === "aborted") return; // we stopped it ourselves (Stop / language switch)
       console.warn("voice command:", e.error);
+      onDebug?.(`error: ${e.error}`);
       if (e.error === "not-allowed" || e.error === "service-not-allowed") active = false; // mic refused: give up
     };
     rec.start();
