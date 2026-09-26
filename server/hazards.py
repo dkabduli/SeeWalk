@@ -30,7 +30,7 @@ class HazardReport(BaseModel):
     lon: float = Field(ge=-180, le=180)
     type: MapType
     confidence: float = Field(ge=0, le=1)
-    source: Literal["gemini", "fast_layer"] = "gemini"
+    source: Literal["gemini", "fast_layer", "test"] = "gemini"  # test: pins dropped by hand from the map page
 
 
 class SaveResult(BaseModel):

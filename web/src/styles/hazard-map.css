@@ -59,3 +59,10 @@
   .hmap-card { right: auto; width: 420px; }
   .hmap-hot { right: auto; }
 }
+
+.hmap-test { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
+.hmap-test button {
+  min-height: 40px; padding: 6px 14px; border: 2px solid var(--ink); border-radius: 999px;
+  background: var(--teal); font-weight: 700; box-shadow: 0 3px 0 var(--ink);
+}
+.hmap-test button:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--ink); }

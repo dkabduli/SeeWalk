@@ -13,7 +13,7 @@ export interface HazardReport {
   lon: number;
   type: MapType;
   confidence: number;
-  source: "gemini" | "fast_layer";
+  source: "gemini" | "fast_layer" | "test";
 }
 
 export interface MapHazard {
@@ -43,6 +43,17 @@ export function sendReport(report: HazardReport): Promise<void> {
     body: JSON.stringify(report),
     keepalive: true,
   }).then(() => {}, () => {});
+}
+
+/** Save and wait for the answer (the map page's test pin; the walk uses sendReport). */
+export async function saveReport(report: HazardReport): Promise<{ saved: boolean; reason: string }> {
+  const r = await fetch(`${BASE}/hazards`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(report),
+  });
+  if (!r.ok) throw new Error(r.status === 503 ? "map_off" : `hazards ${r.status}`);
+  return r.json();
 }
 
 async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {

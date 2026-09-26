@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "../styles/hazard-map.css";
-import { fetchHazards, fetchHotspots, MAP_TYPES, type Hotspot, type MapHazard, type MapType } from "../map/hazardsApi";
+import {
+  fetchHazards, fetchHotspots, MAP_TYPES, saveReport, type Hotspot, type MapHazard, type MapType,
+} from "../map/hazardsApi";
 
 /** Hazard map (…/?map): sidewalk problems SeeWalk walkers passed, from Tiger Data. */
 
@@ -33,6 +35,8 @@ export default function HazardMap() {
   const [hazards, setHazards] = useState<MapHazard[]>([]);
   const [hotspots, setHotspots] = useState<Hotspot[]>([]);
   const [status, setStatus] = useState<Status>("loading");
+  const [reload, setReload] = useState(0);
+  const [pinNote, setPinNote] = useState("");
 
   const mapEl = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
@@ -62,7 +66,30 @@ export default function HazardMap() {
     load();
     const timer = setInterval(load, REFRESH_MS);
     return () => { ctrl.abort(); clearInterval(timer); };
-  }, [days]);
+  }, [days, reload]);
+
+  // Test the whole path from a phone: GPS → POST /hazards → Tiger Data → pin on this map.
+  function dropTestPin() {
+    if (!navigator.geolocation) return setPinNote("This browser has no location.");
+    setPinNote("Finding you…");
+    navigator.geolocation.getCurrentPosition(
+      async (p) => {
+        const { latitude: lat, longitude: lon, accuracy } = p.coords;
+        try {
+          const r = await saveReport({
+            session_id: `test-${crypto.randomUUID()}`, lat, lon, type: "pothole", confidence: 1, source: "test",
+          });
+          setPinNote(r.saved ? `Test pin saved (±${Math.round(accuracy)} m).` : `Not saved: ${r.reason}.`);
+          map.current?.flyTo([lat, lon], 18);
+          setReload((n) => n + 1);
+        } catch (e) {
+          setPinNote((e as Error).message === "map_off" ? "The server has no database." : "Couldn't reach the server.");
+        }
+      },
+      (e) => setPinNote(e.code === e.PERMISSION_DENIED ? "Location permission denied." : "Couldn't get your location."),
+      { enableHighAccuracy: true, timeout: 15_000 },
+    );
+  }
 
   const shown = useMemo(() => hazards.filter((h) => !hidden.has(h.type)), [hazards, hidden]);
   const counts = useMemo(() => {
@@ -81,7 +108,7 @@ export default function HazardMap() {
       L.circleMarker([h.lat, h.lon], { radius: 9, color: "#fff", weight: 2, fillColor: color, fillOpacity: 0.9 })
         .bindPopup(
           `<b>${label}</b><br>${Math.round(h.confidence * 100)}% sure · ${ago(h.time)}` +
-          `<br><small>seen by ${h.source === "fast_layer" ? "on-device detector" : "Gemini"}</small>`,
+          `<br><small>${h.source === "test" ? "test pin (dropped by hand)" : `seen by ${h.source === "fast_layer" ? "on-device detector" : "Gemini"}`}</small>`,
         )
         .addTo(layer);
     }
@@ -129,6 +156,10 @@ export default function HazardMap() {
           ))}
         </div>
         {message && <p className="hmap-msg" role="status">{message}</p>}
+        <div className="hmap-test">
+          <button onClick={dropTestPin}>📍 Drop a test pin here</button>
+          {pinNote && <span role="status">{pinNote}</span>}
+        </div>
       </header>
 
       {hotspots.length > 0 && (

@@ -1,0 +1,5 @@
+# Vercel Python function (api/index.py): hazard map API only. The full server uses server/requirements.txt.
+fastapi
+pydantic
+psycopg[binary]
+python-dotenv
