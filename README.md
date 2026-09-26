@@ -234,7 +234,7 @@ Everything the walker touches and hears.
 ### Siddig: tunnel, video, Devpost
 Get the app on everyone's iPhone, then turn it into a great 2-minute video.
 - [ ] `cloudflared` HTTPS tunnel Saturday morning
-- [ ] `docs/shot-list.md`, gear, **film Sat 4:30–6:45 PM before sunset**, edit ~2 min
+- [ ] [`docs/demo-script.md`](docs/demo-script.md) (video + live demo), gear, **film Sat 4:30–6:45 PM before sunset**, edit ~2 min
 - [ ] Devpost with all 4 names, **submitted by 9:30 AM Sunday**
 - [ ] Stretch: Vultr + GoDaddy domain with Caddy HTTPS
 
