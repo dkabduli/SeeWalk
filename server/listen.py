@@ -67,10 +67,10 @@ async def detect_command(audio_b64: str) -> ListenResult:
 @router.post("/listen", response_model=ListenResult)
 async def listen(req: ListenRequest):
     start = time.perf_counter()
-    if os.getenv("SEEWALK_SAVE_AUDIO"):  # debugging: keep the last clip to listen to
-        with open(os.environ["SEEWALK_SAVE_AUDIO"], "wb") as f:
-            f.write(base64.b64decode(req.audio, validate=False))
     try:
+        if os.getenv("SEEWALK_SAVE_AUDIO"):  # debugging: keep the last clip to listen to
+            with open(os.environ["SEEWALK_SAVE_AUDIO"], "wb") as f:
+                f.write(base64.b64decode(req.audio))
         result = await detect_command(req.audio)
     except Exception as e:
         log.warning("listen failed: %s: %s", type(e).__name__, e)

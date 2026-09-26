@@ -14,10 +14,28 @@ interface LogLine { at: string; kind: "result" | "system" | "ask" | "voice" | "i
 
 const time = () => new Date().toLocaleTimeString([], { hour12: false });
 
-/** Dev server only: mirror the log to web/lab-log.jsonl on the laptop. */
+/** Mirror the log to web/lab-log.jsonl on the laptop (dev server / preview). Lines that can't be
+ *  sent (phone offline, e.g. the airplane-mode test) are kept and sent when the connection is back. */
+const unsent: string[] = [];
+let sending = false;
+async function flushToLaptop() {
+  if (sending) return;
+  sending = true;
+  try {
+    while (unsent.length) {
+      const r = await fetch("/__lablog", { method: "POST", body: unsent[0] });
+      if (!r.ok) break;
+      unsent.shift();
+    }
+  } catch { /* offline: try again later */ }
+  sending = false;
+}
+let retryTimer: ReturnType<typeof setInterval> | null = null;
 function sendToLaptop(line: { at: string; kind: string; text: string }) {
-  if (!import.meta.env.DEV) return;
-  fetch("/__lablog", { method: "POST", body: JSON.stringify(line), keepalive: true }).catch(() => {});
+  unsent.push(JSON.stringify(line));
+  if (unsent.length > 2000) unsent.shift();
+  retryTimer ??= setInterval(() => void flushToLaptop(), 2000); // only once the lab is used
+  void flushToLaptop();
 }
 
 function describe(r: SceneResult) {

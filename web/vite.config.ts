@@ -1,24 +1,23 @@
 /// <reference types="vitest/config" />
 import { appendFileSync } from "node:fs";
 import react from "@vitejs/plugin-react";
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig, type Connect, type Plugin } from "vite";
 
-/** Dev only: the camera lab (…/?lab) posts its log here so it can be read on the laptop
- *  (web/lab-log.jsonl) without screenshots. Not part of the production build. */
+/** Camera lab (…/?lab) posts its log here so phone tests can be read on the laptop
+ *  (web/lab-log.jsonl) without screenshots. Dev server and `npm run preview` only. */
+const appendLabLog: Connect.NextHandleFunction = (req, res) => {
+  let body = "";
+  req.on("data", (c) => (body += c));
+  req.on("end", () => {
+    appendFileSync("lab-log.jsonl", body.trim() + "\n");
+    res.statusCode = 204;
+    res.end();
+  });
+};
 const labLog: Plugin = {
   name: "seewalk-lab-log",
-  apply: "serve",
-  configureServer(server) {
-    server.middlewares.use("/__lablog", (req, res) => {
-      let body = "";
-      req.on("data", (c) => (body += c));
-      req.on("end", () => {
-        appendFileSync("lab-log.jsonl", body.trim() + "\n");
-        res.statusCode = 204;
-        res.end();
-      });
-    });
-  },
+  configureServer(server) { server.middlewares.use("/__lablog", appendLabLog); },
+  configurePreviewServer(server) { server.middlewares.use("/__lablog", appendLabLog); },
 };
 
 const api = {
