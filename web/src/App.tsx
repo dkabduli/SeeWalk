@@ -23,7 +23,7 @@ const CustomWebcam = () => {
 
         const detect = async () => {
             while (running) {
-                const imageSrc = webcamRef.current?.getScreenshot();
+                const imageSrc = webcamRef.current?.getScreenshot({width: 384, height: 384});
 
                 if (!imageSrc) {
                     await new Promise(resolve => setTimeout(resolve, 1000));
@@ -43,6 +43,8 @@ const CustomWebcam = () => {
 
                     const result = await info.json();
 
+                    console.log("Status:", info.status);
+                    console.log("Response:", result);
                     console.log("Gemini:", result.result);
                 } catch (e) {
                     console.log(e);

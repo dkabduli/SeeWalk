@@ -4,6 +4,7 @@ import base64
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from google import genai
+from google.genai import types
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -39,8 +40,14 @@ async def detect(data: dict):
                     "data": image_bytes,
                 }
             },
-            "Identify the objects in this image. Return only a simple list of objects.",
+            "Identify all visible objects. Output ONLY a comma-separated list of object names. No sentences, no introduction, no explanation, no punctuation other than commas.",
         ],
+        config=types.GenerateContentConfig(
+            max_output_tokens=200
+        )
     )
+
+    print("Gemini response:", response)
+    print("Gemini text:", response.text)
 
     return {"result": response.text}
