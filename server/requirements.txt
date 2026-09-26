@@ -1,7 +1,0 @@
-fastapi
-uvicorn[standard]
-google-genai
-pydantic
-httpx
-python-dotenv
-psycopg[binary]

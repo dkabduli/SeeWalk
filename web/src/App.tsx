@@ -1,58 +1,88 @@
 import './styles/App.css'
-import { useRef, useCallback, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import Webcam from "react-webcam";
-import CameraLab from "./pages/CameraLab";
 
-// Ask for full HD; the browser falls back to the best the camera can do
+const deviceWidth = 600;
+const deviceHeight = 600;
+const facingMode= "user"
+
 const videoConstraints = {
-  width: { ideal: 1920 },
-  height: { ideal: 1080 },
-  facingMode: "user"
+    width: deviceWidth,
+    height: deviceHeight,
+    facingMode: facingMode
 };
 
 const CustomWebcam = () => {
-  const webcamRef = useRef<Webcam>(null);
-  const [imgSrc, setImgSrc] = useState<string | null>(null)
+    const webcamRef = useRef<any>(null);
+    //const [imgSrc, setImgSrc] = useState<string | null>(null);
+    const [isRunning, setIsRunning] = useState(false);
 
-  // setInterval(() => {
-  //   const imageSrc = webcamRef.current.getScreenshot();
-  //   console.log(imageSrc)
-  //   setImgSrc(null)
-  //   console.log("Hi")
-  // }, 1000)
+    useEffect(() => {
+        if (!isRunning) return;
 
-  const capture = useCallback(() => {
-    const imageSrc = webcamRef.current?.getScreenshot() ?? null;
-    setImgSrc(imageSrc)
-    console.log(imageSrc)
-  }, [webcamRef])
+        let running = true;
 
-  return (
-    <main className="container">
-      <h1>SeeWalk</h1>
-      {imgSrc ? (
-        <img className="preview" src={imgSrc} alt="webcam" />
-      ) : <>
-        <Webcam
-          className="preview"
-          videoConstraints={videoConstraints}
-          ref={webcamRef}
-          forceScreenshotSourceSize
-          screenshotQuality={0.95}
-        />
-        <button className="capture" onClick={capture}>Capture</button>
-      </>}
-    </main>
-  );
-}
+        const detect = async () => {
+            while (running) {
+                const imageSrc = webcamRef.current?.getScreenshot({width: 384, height: 384});
 
+                if (!imageSrc) {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    continue;
+                }
+
+                try {
+                    console.log("Sending Info..");
+
+                    const info = await fetch("http://localhost:8001/detect", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({ image: imageSrc })
+                    });
+
+                    const result = await info.json();
+
+                    console.log("Status:", info.status);
+                    console.log("Response:", result);
+                    console.log("Gemini:", result.result);
+                } catch (e) {
+                    console.log(e);
+                }
+
+                await new Promise(resolve => setTimeout(resolve, 3000));
+            }
+        };
+
+        detect();
+
+        return () => {
+            running = false;
+        };
+    }, [isRunning]);
+
+    return (
+        <main className="container">
+          <h1>SeeWalk</h1>
+            <Webcam
+                audio={false}
+                screenshotFormat="image/jpeg"
+                videoConstraints={videoConstraints}
+                ref={webcamRef}
+            />
+
+            <button onClick={() => setIsRunning(prev => !prev)}>
+                {isRunning ? "Pause" : "Resume"}
+            </button>
+        </main>
+    );
+};
 
 function App() {
-  // Aroha's page is the app. Abdul's camera debug page lives at …/?lab for testing the camera piece.
-  if (new URLSearchParams(window.location.search).has("lab")) return <CameraLab />;
   return (
     <CustomWebcam></CustomWebcam>
   );
 }
 
-export default App
+export default App;
