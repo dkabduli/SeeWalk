@@ -43,8 +43,8 @@ const CustomWebcam = () => {
 
 
 function App() {
-  // Aroha's page is the app. Abdul's camera debug page lives at …/#lab for testing the camera piece.
-  if (window.location.hash === "#lab") return <CameraLab />;
+  // Aroha's page is the app. Abdul's camera debug page lives at …/?lab for testing the camera piece.
+  if (new URLSearchParams(window.location.search).has("lab")) return <CameraLab />;
   return (
     <CustomWebcam></CustomWebcam>
   );

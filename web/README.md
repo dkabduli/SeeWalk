@@ -2,7 +2,7 @@
 
 The phone app (React + Vite + TypeScript). Owners: `src/api/` + `src/camera/` Abdul ([PRD](../docs/prd/abdul-camera-capture.md), code identical to the PRD); `src/pages/`, `src/audio/`, `src/alerts/`, `src/i18n/` Jibril ([PRD](../docs/prd/jibril-ui-audio.md)).
 
-**Right now `App.tsx` shows `pages/CameraLab.tsx`**, a debug page for the camera piece, until Jibril's `WalkMode` screen replaces it. It shows the live camera, every `SceneResult` with the time since the last one, system events (`no_connection`, `camera_blocked`, …), a **lens meter** (brightness/contrast, for tuning "lens covered"), the voice-command status, and a big **What's ahead?** zone.
+**`App.tsx` shows Aroha's page. The camera debug page (`pages/CameraLab.tsx`) opens at `…/?lab`.** It shows the live camera, every `SceneResult` with the time since the last one, system events (`no_connection`, `camera_blocked`, …), a **lens meter** (brightness/contrast, for tuning "lens covered"), the voice-command status, and a big **What's ahead?** zone.
 
 ## Run
 
