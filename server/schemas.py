@@ -22,6 +22,11 @@ class Hazard(BaseModel):
 class SceneResult(BaseModel):
     hazards: list[Hazard]
     unclear: bool = Field(description="True if the image is too blurry or dark to judge")
+    summary: str = Field(
+        description="What is in front of the camera, hazard or not, in at most 6 words in the requested "
+        "language (e.g. 'Laptop and a bottle on a table'). Only spoken when the walker asks 'What's ahead?'. "
+        "Empty if unclear."
+    )
 
 
 class AnalyzeRequest(BaseModel):

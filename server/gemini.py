@@ -23,6 +23,8 @@ the walker). 2 = obstacle or surface problem in the path. 3 = information (cross
 Never guess: if it isn't clearly visible, leave it out. At most 3 hazards, most important first.
 If the image is too blurry or dark, set unclear=true. Never say anything is safe to cross.
 If a previous frame is given, use it only to judge whether things are approaching.
+Also fill summary: the main things in front of the camera in at most 6 words, hazard or not (e.g. "Laptop and
+lotion on a table", "Empty hallway", "Street with parked cars"). Plain nouns, no guessing; empty if unclear.
 Write each phrase in {language}, at most 4 words, naming the actual thing, then direction
 (e.g. "Bins ahead", "Glass door ahead", "Parked bike ahead", "Person on your left")."""
 

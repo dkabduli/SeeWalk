@@ -18,6 +18,9 @@ export interface Hazard {
 export interface SceneResult {
   hazards: Hazard[];
   unclear: boolean;
+  /** What's in front, hazard or not, ≤ 6 words ("Laptop and lotion on a table"). From Gemini only;
+   *  spoken only when the walker asks "What's ahead?". */
+  summary?: string;
 }
 
 export type SystemEvent = "no_connection" | "connection_back" | "camera_blocked";

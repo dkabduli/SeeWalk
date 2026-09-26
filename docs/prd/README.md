@@ -49,7 +49,8 @@ Response `200` (`SceneResult`):
       "phrase": "Person ahead, left"
     }
   ],
-  "unclear": false
+  "unclear": false,
+  "summary": "Laptop and lotion on a table"
 }
 ```
 
@@ -63,6 +64,7 @@ Response `200` (`SceneResult`):
 | `approaching` | `true` if it moved toward the walker between `prev_image` and `image` |
 | `phrase` | ≤ 4 words, in `lang`, hazard then direction. This is exactly what gets spoken |
 | `unclear` | `true` if the snapshot is too blurry/dark to judge |
+| `summary` | What's in front, hazard or not, ≤ 6 words. **Only spoken when the walker asks "What's ahead?"** and there's no hazard (a laptop on a table isn't a walking hazard, but the walker asked). Empty if unclear |
 
 Errors: `503` means Gemini failed or timed out. The phone skips that snapshot and counts it as a failure.
 

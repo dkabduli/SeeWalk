@@ -448,14 +448,26 @@ export default function WalkMode() {
     }
     const h = pickAlert(r, { ignoreRepeat: true });
     if (h) {
-      await speak(h, true);
-    } else {
-      speechId.current++;
-      // They asked, so never answer with silence, but never promise "safe" or "clear" either
-      setShown({ text: lang === "fr" ? "Rien de détecté" : "Nothing detected", level: "info" });
-      log("say", "Nothing detected (asked)");
-      await audio.playClip(lang, "nothing_detected");
+      await speak(h, true);                      // a hazard always comes first
+      return;
     }
+    const id = ++speechId.current;
+    const summary = r.summary?.trim();
+    if (summary) {
+      // No hazard, but they asked: say what's there ("Laptop and lotion on a table")
+      setShown({ text: summary, level: "info" });
+      log("say", `${summary} (summary, asked)`);
+      try {
+        const mp3 = await tts(summary, lang);
+        if (speechId.current === id) await audio.playSpeech(mp3, 0);
+        return;
+      } catch { /* live voice failed: fall through to the bundled clip */ }
+    }
+    if (speechId.current !== id) return;
+    // Never answer a question with silence, but never promise "safe" or "clear" either
+    setShown({ text: lang === "fr" ? "Rien de détecté" : "Nothing detected", level: "info" });
+    log("say", "Nothing detected (asked)");
+    await audio.playClip(lang, "nothing_detected");
   }
   useLayoutEffect(() => { whatsAheadRef.current = whatsAhead; });
 
