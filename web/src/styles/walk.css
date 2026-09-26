@@ -13,6 +13,7 @@
   --steel: #7d8ea3;    /* information */
 
   position: fixed; inset: 0; overflow-y: auto;
+  -webkit-overflow-scrolling: touch; overscroll-behavior: contain; /* smooth, no rubber-banding the page behind */
   display: flex; flex-direction: column; gap: 12px;
   padding: max(12px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom));
   background: var(--bg); color: var(--text);
@@ -63,14 +64,15 @@
   background: #000; border: 1px solid var(--line);
   flex: 1; min-height: 200px;        /* the camera gets all the space that's left */
 }
-.walk.is-idle .viewfinder { min-height: 320px; }
-.walk .viewfinder video { width: 100%; height: 100%; object-fit: cover; display: block; }
-.walk .setup {            /* camera is off before Start, so the steps sit on black */
-  position: absolute; inset: 0; padding: 22px 20px; overflow-y: auto;
-  display: flex; flex-direction: column; gap: 20px;
-  background: var(--bg);
+.walk.is-idle .viewfinder {
+  position: absolute; width: 1px; height: 1px; min-height: 0; opacity: 0; pointer-events: none; border: 0;
 }
-/* centred when it fits; when it doesn't (small iPhones), it starts at the top and scrolls */
+.walk .viewfinder video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.walk .setup {            /* before Start: part of the page's single scroll, no scroll box of its own */
+  flex: 1; display: flex; flex-direction: column; gap: 20px;
+  padding: 22px 20px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line);
+}
+/* centred when it fits the screen; otherwise it simply flows and the page scrolls */
 .walk .setup > :first-child { margin-top: auto; }
 .walk .setup > :last-child { margin-bottom: auto; }
 .walk .tagline {
@@ -107,6 +109,7 @@
 .walk .alert.long .text {                           /* "read this" answers: smaller, scroll if needed */
   font-size: 19px; font-weight: 700; line-height: 1.3; letter-spacing: 0;
   max-height: 7.8em; overflow-y: auto;
+  -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
 }
 .walk .alert.none .text { font-size: 18px; font-weight: 600; color: var(--muted); text-wrap: pretty; }
 .walk .alert.urgent  { border-left-color: var(--red); }
@@ -118,8 +121,10 @@
 
 /* Controls. Walking: the big "What's ahead?" target fills the bottom of the screen. */
 .walk .start {
+  position: sticky; bottom: 0; flex: none;
   min-height: 84px; border-radius: 16px; background: var(--white); color: var(--bg);
   font-size: 28px; font-weight: 800; letter-spacing: -0.2px;
+  box-shadow: 0 -14px 20px var(--bg);   /* fades the text scrolling under it */
 }
 .walk .controls { flex: none; display: grid; grid-template-columns: 1.35fr 1fr; gap: 10px; }
 .walk .ahead {

@@ -323,32 +323,33 @@ export default function WalkMode() {
             <span>{busy === "thinking" ? t.thinking : t.listeningNow}</span>
           </div>
         )}
-        {!walking && (
-          <div className="setup">
-            <p className="tagline">{t.tagline}</p>
-            <ol>
-              <li>{t.step1}</li>
-              <li>{t.step2}</li>
-              <li>{t.step3}</li>
-            </ol>
-            <div className="phrases">
-              <p>{t.youCanSay}</p>
-              <ul>
-                <li>{t.cmdAhead}</li>
-                <li>{t.cmdHolding}</li>
-                <li>{t.cmdPath}</li>
-                <li>{t.cmdRead}</li>
-              </ul>
-            </div>
-            <div className="setting">
-              <span>{t.autoLabel}</span>
-              <button className={`auto${autoAlerts ? " on" : ""}`} onClick={toggleAutoAlerts} aria-pressed={autoAlerts}>
-                {autoAlerts ? t.autoOn : t.autoOff}
-              </button>
-            </div>
-          </div>
-        )}
       </div>
+
+      {!walking && (
+        <div className="setup">
+          <p className="tagline">{t.tagline}</p>
+          <ol>
+            <li>{t.step1}</li>
+            <li>{t.step2}</li>
+            <li>{t.step3}</li>
+          </ol>
+          <div className="phrases">
+            <p>{t.youCanSay}</p>
+            <ul>
+              <li>{t.cmdAhead}</li>
+              <li>{t.cmdHolding}</li>
+              <li>{t.cmdPath}</li>
+              <li>{t.cmdRead}</li>
+            </ul>
+          </div>
+          <div className="setting">
+            <span>{t.autoLabel}</span>
+            <button className={`auto${autoAlerts ? " on" : ""}`} onClick={toggleAutoAlerts} aria-pressed={autoAlerts}>
+              {autoAlerts ? t.autoOn : t.autoOff}
+            </button>
+          </div>
+        </div>
+      )}
 
       {walking && (
         <section
