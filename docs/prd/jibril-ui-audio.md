@@ -177,12 +177,14 @@ const REPEAT_MS = 5000;
 const DISTANCE_RANK = { close: 0, near: 1, far: 2 } as const;
 const lastSpoken = new Map<string, number>();
 
-/** Returns the one hazard worth saying now, or null to stay quiet. */
-export function pickAlert(result: SceneResult, now = Date.now()): Hazard | null {
+/** Returns the one hazard worth saying now, or null to stay quiet.
+ *  ignoreRepeat: the walker asked "What's ahead?", so say it even if we just said it. */
+export function pickAlert(result: SceneResult, { ignoreRepeat = false } = {}): Hazard | null {
+  const now = Date.now();
   const candidates = result.hazards.filter(
     (h) =>
       h.confidence >= MIN_CONFIDENCE &&
-      now - (lastSpoken.get(`${h.type}:${h.direction}`) ?? 0) >= REPEAT_MS,
+      (ignoreRepeat || now - (lastSpoken.get(`${h.type}:${h.direction}`) ?? 0) >= REPEAT_MS),
   );
   if (candidates.length === 0) return null;
   candidates.sort(
@@ -210,7 +212,7 @@ export function fallbackClip(h: Hazard): string | null {
 export const panFor = (h: Hazard) => (h.direction === "left" ? -1 : h.direction === "right" ? 1 : 0);
 ```
 
-Quick sanity test: call `pickAlert` twice with the same fake result within 5 s. The second call should return `null`.
+Quick sanity test: call `pickAlert` twice with the same fake result within 5 s. The second call should return `null`; with `{ ignoreRepeat: true }` it returns the hazard again **without** muting it for later.
 
 ### Step 5: `web/src/pages/WalkMode.tsx` (the screen)
 
@@ -231,8 +233,8 @@ export default function WalkMode() {
   const [status, setStatus] = useState<"idle" | "walking" | "noConn" | "blocked">("idle");
   const t = strings[lang];
 
-  const speak = useCallback(async (h: Hazard) => {
-    if (h.urgency === 1) audio.stop();          // urgent interrupts
+  const speak = useCallback(async (h: Hazard, asked = false) => {
+    if (h.urgency === 1 || asked) audio.stop(); // urgent, or the walker asked: interrupt
     else if (audio.busy) return;                // otherwise don't talk over ourselves
     const pan = panFor(h);
     setCaption(h.phrase);
@@ -273,26 +275,36 @@ export default function WalkMode() {
       await audio.playClip(lang, "walk_stopped");
       return;
     }
-    await audio.unlock();                        // must happen inside this tap (iOS)
-    await audio.preload(lang);
+    // iOS only allows audio and the mic to start *inside* the tap: do these before any await
+    const unlocking = audio.unlock();
+    voice.start(lang);                           // mic permission prompt on first use
+    walk.start();                                // runs until Stop, don't await; camera prompt on first use
     setWalking(true);
     setStatus("walking");
+    await unlocking;
+    await audio.preload(lang);                   // ~1 s; the first snapshot takes longer anyway
     await audio.playClip(lang, "walk_started");
-    voice.start(lang);                           // mic permission prompt on first use
-    walk.start();
   }
 
   async function whatsAhead() {
     if (!walking) return;
-    const r = await walk.checkNow();             // jumps the queue; null if it failed
-    if (!r || r.unclear) {
+    const answer = await walk.checkNow();        // jumps the queue
+    audio.stop();                                // they asked: this answer comes first
+    if (!answer.ok) {
+      if (answer.reason === "stopped") return;
+      setCaption(strings[lang][answer.reason === "no_connection" ? "noConn" : "blocked"]);
+      await audio.playClip(lang, answer.reason); // "No connection…" or "Camera blocked"
+      return;
+    }
+    const r = answer.result;
+    if (r.unclear) {
       setCaption(lang === "fr" ? "Incertain" : "Unclear");
       await audio.playClip(lang, "unclear");
       return;
     }
-    const h = pickAlert(r, Date.now() + 60_000); // ignore the repeat rule: the user asked
+    const h = pickAlert(r, { ignoreRepeat: true });
     if (h) {
-      await speak(h);
+      await speak(h, true);
     } else {
       // They asked, so never answer with silence, but never promise "safe" or "clear" either
       setCaption(lang === "fr" ? "Rien de détecté" : "Nothing detected");

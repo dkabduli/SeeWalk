@@ -160,8 +160,10 @@ const tinyCanvas = document.createElement("canvas");
 tinyCanvas.width = tinyCanvas.height = 32;
 
 export interface Frame {
-  b64: string;        // JPEG, no "data:" prefix
-  brightness: number; // 0 (black) – 255 (white)
+  b64: string;       // JPEG, no "data:" prefix
+  brightness: number; // average, 0 (black) – 255 (white)
+  contrast: number;   // standard deviation of brightness; near 0 = flat, featureless image
+  at: number;         // Date.now() when captured
 }
 
 export function captureFrame(video: HTMLVideoElement, maxEdge = 768): Frame | null {
@@ -178,13 +180,20 @@ export function captureFrame(video: HTMLVideoElement, maxEdge = 768): Frame | nu
   const tiny = tinyCanvas.getContext("2d", { willReadFrequently: true })!;
   tiny.drawImage(video, 0, 0, 32, 32);
   const px = tiny.getImageData(0, 0, 32, 32).data;
-  let sum = 0;
-  for (let i = 0; i < px.length; i += 4) sum += 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
-  return { b64, brightness: sum / (px.length / 4) };
+  const lum: number[] = [];
+  for (let i = 0; i < px.length; i += 4) lum.push(0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2]);
+  const brightness = lum.reduce((a, b) => a + b, 0) / lum.length;
+  const contrast = Math.sqrt(lum.reduce((a, b) => a + (b - brightness) ** 2, 0) / lum.length);
+  return { b64, brightness, contrast, at: Date.now() };
 }
+
+/** A finger over the lens isn't black: auto-exposure turns it into a flat, dim, reddish blur.
+ *  So "covered" = very dark, OR flat and dim. A bright blank wall stays "not covered".
+ *  Tune both numbers on the real iPhone (log them while covering/uncovering the lens). */
+export const looksCovered = (f: Frame) => f.brightness < 12 || (f.contrast < 8 && f.brightness < 90);
 ```
 
-A 768 px JPEG at q0.7 is ~50–70 KB (same as the files in `samples/`), quick to upload on campus Wi-Fi. `samples/` holds real examples of what Gemini will receive.
+A 768 px JPEG at q0.7 is ~50–70 KB (same as the files in `samples/`), quick to upload on campus Wi-Fi. With the previous frame included, each request uploads ~150 KB, about **6 MB a minute** at a 1.5 s interval; fine on Wi-Fi or a phone hotspot.
 
 ### Step 5: `web/src/camera/useCamera.ts`
 
@@ -201,7 +210,9 @@ export function useCamera(onBlocked: () => void) {
       audio: false,
     });
     streamRef.current = stream;
-    stream.getVideoTracks()[0].addEventListener("ended", onBlocked);
+    const track = stream.getVideoTracks()[0];
+    track.addEventListener("ended", onBlocked); // camera stopped for good
+    track.addEventListener("mute", onBlocked);  // iOS pauses it (a call, Siri, another app took the camera)
     const video = videoRef.current!;
     video.srcObject = stream;
     await video.play();
@@ -213,7 +224,13 @@ export function useCamera(onBlocked: () => void) {
     if (videoRef.current) videoRef.current.srcObject = null;
   }, []);
 
-  return { videoRef, start, stop };
+  /** True while the camera is actually delivering frames. */
+  const isLive = useCallback(
+    () => streamRef.current?.getVideoTracks()[0]?.readyState === "live",
+    [],
+  );
+
+  return { videoRef, start, stop, isLive };
 }
 ```
 
@@ -222,16 +239,21 @@ The `<video>` element (Jibril renders it, you pass the ref) **must** have `plays
 ### Step 6: `web/src/camera/useWalkLoop.ts` (the heart of your piece)
 
 ```ts
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { analyze } from "../api/client";
 import type { Lang, SceneResult, SystemEvent } from "../api/types";
-import { captureFrame } from "./captureFrame";
+import { captureFrame, looksCovered } from "./captureFrame";
 import { useCamera } from "./useCamera";
 
 const INTERVAL_MS = Number(import.meta.env.VITE_FRAME_INTERVAL_MS ?? 1500);
 const TIMEOUT_MS = 5000;
-const COVERED = 12;            // average brightness below this = lens covered (daylight scope)
 const NO_CONN_REPEAT_MS = 20000;
+const PREV_MAX_AGE_MS = 4000; // older than this, the "previous frame" can't show motion honestly
+
+/** What "What's ahead?" gets back. */
+export type CheckResult =
+  | { ok: true; result: SceneResult }
+  | { ok: false; reason: "no_connection" | "camera_blocked" | "stopped" };
 
 interface Options {
   lang: Lang;
@@ -246,17 +268,36 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
   const onSystemRef = useRef(onSystem); onSystemRef.current = onSystem;
 
   const camera = useCamera(useCallback(() => onSystemRef.current("camera_blocked"), []));
+  const generation = useRef(0); // bumps on every start/stop, so an old loop can never keep running
   const running = useRef(false);
-  const prevFrame = useRef<string | null>(null);
+  const prevFrame = useRef<{ b64: string; at: number } | null>(null);
   const wakeLock = useRef<WakeLockSentinel | null>(null);
   const cutWaitShort = useRef<(() => void) | null>(null);
-  const askers = useRef<((r: SceneResult | null) => void)[]>([]);
+  const askers = useRef<((r: CheckResult) => void)[]>([]);
+
+  const keepAwake = useCallback(async () => {
+    try { wakeLock.current = await navigator.wakeLock?.request("screen"); } catch { /* refused: fine */ }
+  }, []);
+
+  // iOS drops the wake lock (and often the camera) when the page is hidden. When the walker
+  // comes back to Safari, take both back.
+  useEffect(() => {
+    const onVisible = async () => {
+      if (document.visibilityState !== "visible" || !running.current) return;
+      await keepAwake();
+      if (!camera.isLive()) {
+        try { await camera.start(); } catch { onSystemRef.current("camera_blocked"); }
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [camera, keepAwake]);
 
   /** "What's ahead?": take the next snapshot right away and resolve with its result. */
   const checkNow = useCallback(
     () =>
-      new Promise<SceneResult | null>((resolve) => {
-        if (!running.current) return resolve(null);
+      new Promise<CheckResult>((resolve) => {
+        if (!running.current) return resolve({ ok: false, reason: "stopped" });
         askers.current.push(resolve);
         cutWaitShort.current?.();
       }),
@@ -264,35 +305,52 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
   );
 
   const start = useCallback(async () => {
-    await camera.start();
+    const gen = ++generation.current;
+    const alive = () => running.current && generation.current === gen;
     running.current = true;
     prevFrame.current = null;
-    try { wakeLock.current = await navigator.wakeLock?.request("screen"); } catch { /* not allowed, fine */ }
+
+    try {
+      await camera.start();
+    } catch {
+      // Permission denied or no camera. Never fail silently.
+      onSystemRef.current("camera_blocked");
+      running.current = false;
+      return;
+    }
+    await keepAwake();
 
     let fails = 0;
     let lastNoConn = 0;
-    let darkCount = 0;
+    let coveredCount = 0;
 
-    while (running.current) {
+    while (alive()) {
       const roundStart = performance.now();
       const asked = askers.current.splice(0); // people waiting on THIS snapshot
-      let result: SceneResult | null = null;
+      let answer: CheckResult = { ok: false, reason: "camera_blocked" };
       const frame = captureFrame(camera.videoRef.current!);
 
       if (frame) {
-        darkCount = frame.brightness < COVERED ? darkCount + 1 : 0;
-        if (darkCount === 2) onSystemRef.current("camera_blocked");
+        coveredCount = looksCovered(frame) ? coveredCount + 1 : 0;
+        if (coveredCount === 2) onSystemRef.current("camera_blocked");
 
+        const prev = prevFrame.current && frame.at - prevFrame.current.at < PREV_MAX_AGE_MS
+          ? prevFrame.current.b64
+          : null;
         const ctrl = new AbortController();
         const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
         try {
-          result = await analyze(frame.b64, prevFrame.current, langRef.current, ctrl.signal);
+          const result = await analyze(frame.b64, prev, langRef.current, ctrl.signal);
+          if (!alive()) break; // stopped while we were waiting: drop it
           if (fails >= 2) onSystemRef.current("connection_back");
           fails = 0;
+          answer = { ok: true, result };
           // If someone asked "What's ahead?", they get this result and speak it themselves
-          if (running.current && asked.length === 0) onResultRef.current(result);
+          if (asked.length === 0) onResultRef.current(result);
         } catch {
+          if (!alive()) break;
           fails += 1;
+          answer = { ok: false, reason: "no_connection" };
           const now = Date.now();
           if (fails === 2 || (fails > 2 && now - lastNoConn > NO_CONN_REPEAT_MS)) {
             onSystemRef.current("no_connection");
@@ -301,13 +359,13 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
         } finally {
           clearTimeout(timer);
         }
-        prevFrame.current = frame.b64;
+        prevFrame.current = { b64: frame.b64, at: frame.at };
       }
-      asked.forEach((resolve) => resolve(result));
+      asked.forEach((resolve) => resolve(answer));
 
       // Wait out the interval, unless "What's ahead?" cuts it short
       const wait = INTERVAL_MS - (performance.now() - roundStart);
-      if (wait > 0 && askers.current.length === 0) {
+      if (wait > 0 && askers.current.length === 0 && alive()) {
         await new Promise<void>((resolve) => {
           const t = setTimeout(resolve, wait);
           cutWaitShort.current = () => { clearTimeout(t); resolve(); };
@@ -315,12 +373,16 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
       }
       cutWaitShort.current = null;
     }
-    askers.current.splice(0).forEach((resolve) => resolve(null));
-  }, [camera]);
+    if (generation.current === gen) {
+      askers.current.splice(0).forEach((resolve) => resolve({ ok: false, reason: "stopped" }));
+    }
+  }, [camera, keepAwake]);
 
   const stop = useCallback(() => {
     running.current = false;
+    generation.current++;
     cutWaitShort.current?.();
+    askers.current.splice(0).forEach((resolve) => resolve({ ok: false, reason: "stopped" }));
     camera.stop();
     wakeLock.current?.release().catch(() => {});
     wakeLock.current = null;
@@ -332,22 +394,26 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
 
 Rules baked in:
 - **One request in flight**, 5 s timeout; the next snapshot waits for the previous answer.
-- `prevFrame` is sent so Gemini can see what's **approaching**.
-- **"What's ahead?" jumps the queue**: if a request is in flight, it answers with the very next one; if the loop is waiting, it stops waiting.
-- A "What's ahead?" result goes **only to the caller** (who speaks it even if it's a repeat, or says "Unclear"), so it isn't spoken twice.
+- **Stop → Start quickly can't create two loops**: each start gets a generation number, and an old loop exits as soon as it notices it's stale (it also never fires events after Stop).
+- **Camera permission denied → `camera_blocked`**, not a silent failure.
+- `prevFrame` is sent so Gemini can see what's **approaching**, but only if it's < 4 s old (after an outage an old frame would fake "motion").
+- **"What's ahead?" jumps the queue** and gets a clear answer: a result, or *why* there isn't one (`no_connection` / `camera_blocked` / `stopped`), so Jibril can say "No connection" instead of a misleading "Unclear".
+- A "What's ahead?" result goes **only to the caller**, so it isn't spoken twice.
+- Coming back to Safari re-takes the wake lock and restarts the camera if iOS stopped it.
 
 ### Step 7: `web/src/camera/voiceCommand.ts` ("What's ahead?" out loud)
 
-Uses Safari's built-in speech recognition (the same engine as iPhone dictation). Jibril calls `voice.start(lang)` inside the Start tap and `voice.stop()` on Stop.
+Uses Safari's built-in speech recognition (the same engine as iPhone dictation).
 
 ```ts
 import type { Lang } from "../api/types";
 
-// The walker's question must contain BOTH words, so SeeWalk's own phrases leaking out of
-// open-ear headphones ("Pothole ahead") never trigger it: none of them contain "what".
-const TRIGGERS: Record<Lang, [string, string][]> = {
+// Each trigger lists words that must ALL appear. SeeWalk's own phrases (spoken by Gemini's
+// "phrase" field, which can be free-form) leak out of open-ear headphones, so the triggers use
+// question words our alerts never contain: "what" in English, "qu'y a" / "qu'est-ce" / "quoi" in French.
+const TRIGGERS: Record<Lang, string[][]> = {
   en: [["what", "ahead"], ["what", "front"]],
-  fr: [["qu", "devant"]], // "Qu'y a-t-il devant ?", "Qu'est-ce qu'il y a devant ?"
+  fr: [["qu'y a", "devant"], ["qu'est-ce", "devant"], ["quoi", "devant"]],
 };
 
 export function createVoiceCommand(onCommand: () => void) {
@@ -355,6 +421,7 @@ export function createVoiceCommand(onCommand: () => void) {
     (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
   let rec: any = null;
   let active = false;
+  let lastFired = 0;
 
   function start(lang: Lang): boolean {
     if (!Recognition) return false;
@@ -365,14 +432,21 @@ export function createVoiceCommand(onCommand: () => void) {
     rec.continuous = true;
     rec.interimResults = false;
     rec.onresult = (e: any) => {
-      const text = e.results[e.results.length - 1][0].transcript.toLowerCase();
-      if (TRIGGERS[lang].some(([a, b]) => text.includes(a) && text.includes(b))) onCommand();
+      const text = e.results[e.results.length - 1][0].transcript.toLowerCase().replace(/[’`]/g, "'");
+      const hit = TRIGGERS[lang].some((words) => words.every((w) => text.includes(w)));
+      if (hit && Date.now() - lastFired > 3000) { // one question → one answer
+        lastFired = Date.now();
+        onCommand();
+      }
     };
     // iOS stops listening after silence or after we play audio: restart it
     rec.onend = () => {
       if (active) setTimeout(() => { try { rec?.start(); } catch { /* already running */ } }, 300);
     };
-    rec.onerror = (e: any) => console.warn("voice command:", e.error);
+    rec.onerror = (e: any) => {
+      console.warn("voice command:", e.error);
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") active = false; // mic refused: give up
+    };
     rec.start();
     return true;
   }
@@ -387,12 +461,14 @@ export function createVoiceCommand(onCommand: () => void) {
 }
 ```
 
+**Call `voice.start(lang)` at the very top of the Start tap, before any `await`.** Safari only allows the mic (and audio) to start inside the tap itself; after an `await` it may refuse with `not-allowed`.
+
 How Jibril wires it (in `WalkMode`):
 ```ts
 const voice = useMemo(() => createVoiceCommand(() => whatsAheadRef.current()), []);
-// in the Start tap, after audio.unlock():  voice.start(lang);
-// on Stop:                                 voice.stop();
-// on language switch while walking:        voice.start(next);
+// FIRST lines of the Start tap, before any await:  const unlocking = audio.unlock(); voice.start(lang);
+// on Stop:                                          voice.stop();
+// on language switch while walking:                 voice.start(next);
 ```
 
 **This is the riskiest piece. Test it on the iPhone early (Saturday morning), before building on it.** Check:
@@ -408,9 +484,12 @@ If 3 or 4 fails badly, **ship tap-anywhere only** and tell Jibril to hide the vo
 2. Tap Start → allow camera (and microphone for the voice command). The rear camera should be live, **portrait**.
 3. In the Mac's Web Inspector console you should see a `SceneResult` each interval (add a `console.log` in `onResult` while testing).
 4. **Airplane mode** → after 2 snapshots → `no_connection`. Off again → `connection_back`.
-5. Cover the lens with a finger → `camera_blocked`.
+5. Cover the lens with a finger → `camera_blocked`. **Log `brightness` and `contrast` while you do it** and adjust `looksCovered` so a finger triggers it but a plain wall, sky or road doesn't.
 6. Say "What's ahead?" and tap the lower half of the screen → an answer within ~2 s, even mid-interval.
-7. Hang the phone on the lanyard and walk: check the snapshots aren't mostly sky or ground (tilt the mount if needed).
+7. Tap Stop then Start quickly several times → the console shows only one request at a time.
+8. Deny camera permission once (Settings → Safari → Camera → Deny) → tapping Start says "Camera blocked" instead of doing nothing.
+9. Press the side button (screen off), wait 5 s, unlock → SeeWalk resumes on its own (camera + snapshots).
+10. Hang the phone on the lanyard and walk: check the snapshots aren't mostly sky, ground, or your own chest when the phone spins (see gotchas).
 
 ### Step 9: Team duties
 - [ ] Send the ElevenLabs key privately to the team (group DM, not public channels)
@@ -424,8 +503,8 @@ If 3 or 4 fails badly, **ship tap-anywhere only** and tell Jibril to hide the vo
 |---|---|
 | `useWalkLoop({ lang, onResult, onSystem })` | the loop |
 | `.videoRef` | on `<video playsInline muted autoPlay>` |
-| `.start()` / `.stop()` | Start / Stop taps (call `start()` **after** unlocking audio, inside the tap) |
-| `.checkNow()` | "What's ahead?": resolves with the next `SceneResult`, or `null` if it failed |
+| `.start()` / `.stop()` | Start / Stop taps. `start()` runs until Stop, so **don't `await` it**. It reports its own failures via `onSystem` |
+| `.checkNow()` | "What's ahead?": resolves with `{ ok: true, result }` or `{ ok: false, reason: "no_connection" \| "camera_blocked" \| "stopped" }` |
 | `createVoiceCommand(cb)` | `.start(lang)`, `.stop()`, `.supported` |
 | `analyze()`, `tts()`, types | from `web/src/api/` |
 
@@ -435,7 +514,10 @@ If 3 or 4 fails badly, **ship tap-anywhere only** and tell Jibril to hide the vo
 - [ ] iPhone Safari over HTTPS shows the live rear camera in portrait
 - [ ] A `SceneResult` arrives every interval, never two requests at once
 - [ ] Airplane mode → `no_connection` → back online → `connection_back`
-- [ ] Covered lens → `camera_blocked`; normal daylight never triggers it
+- [ ] Covered lens → `camera_blocked`; normal daylight, a blank wall or sky never triggers it
+- [ ] Camera permission denied → `camera_blocked` (never a silent Start)
+- [ ] Rapid Stop/Start never creates two loops; nothing fires after Stop
+- [ ] Screen off → back on → SeeWalk resumes by itself
 - [ ] "What's ahead?" (voice **and** tap) answers within ~2 s without doubling requests
 - [ ] Voice command tested with Bluetooth headphones; either works or is switched off
 - [ ] Screen stays awake while walking
@@ -454,6 +536,9 @@ If 3 or 4 fails badly, **ship tap-anywhere only** and tell Jibril to hide the vo
 | Headphone audio goes muffled when the mic is on | iOS "call mode". Turn the voice command off; tap-anywhere still works |
 | "Camera blocked" at dusk | Out of scope (daylight only). Film before ~6:45 PM |
 | Phone gets hot | Expected with camera + network + mic; take breaks between takes |
+| Phone spins on the lanyard and films your chest | Use a lanyard case with two attachment points, or tape it to a strap; `looksCovered` catches some of it |
+| Screen locks mid-walk | Safari freezes the page: no snapshots and **no voice** (nothing can warn the walker). Wake lock prevents most of it; for filming also set Settings → Display → Auto-Lock → Never |
+| Two Start taps in a row | Handled by the generation check; if you ever see two requests in flight, that's the bug |
 
 ## 9. Stretch: COCO-SSD fast layer (only after "Done when" is all ✅)
 
