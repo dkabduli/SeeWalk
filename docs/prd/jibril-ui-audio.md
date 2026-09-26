@@ -97,6 +97,9 @@ export const strings: Record<Lang, Record<string, string>> = {
     listening: "Listening for “SeeWalk, …”",
     quiet: "Nothing to report",
     youCanSay: "You can say",
+    autoLabel: "Automatic alerts (people, obstacles)",
+    autoOn: "On",
+    autoOff: "Off",
     cmdAhead: "“SeeWalk, what's ahead?”",
     cmdHolding: "“SeeWalk, what am I holding?”",
     cmdPath: "“SeeWalk, what's blocking my path?”",
@@ -114,6 +117,9 @@ export const strings: Record<Lang, Record<string, string>> = {
     listening: "À l'écoute de « SeeWalk, … »",
     quiet: "Rien à signaler",
     youCanSay: "Vous pouvez dire",
+    autoLabel: "Alertes automatiques (personnes, obstacles)",
+    autoOn: "Oui",
+    autoOff: "Non",
     cmdAhead: "« SeeWalk, qu'y a-t-il devant ? »",
     cmdHolding: "« SeeWalk, qu'est-ce que je tiens ? »",
     cmdPath: "« SeeWalk, qu'est-ce qui bloque mon chemin ? »",
@@ -327,6 +333,12 @@ export default function WalkMode() {
   const [walking, setWalking] = useState(false);
   const [shown, setShown] = useState<Shown | null>(null);
   const [status, setStatus] = useState<Status>("idle");
+  // Automatic announcements (Gemini hazards + the fast layer's people/bikes/cars) are OFF by default
+  // for now: in testing they flooded the screen. With them off, SeeWalk only speaks when asked
+  // ("SeeWalk, …"), plus the safety messages (no connection, camera blocked).
+  const [autoAlerts, setAutoAlerts] = useState(false);
+  const autoAlertsRef = useRef(autoAlerts);
+  useLayoutEffect(() => { autoAlertsRef.current = autoAlerts; });
   const t = strings[lang];
 
   // Only one alert at a time. Each alert gets an id; if a newer one starts (urgent, or the
@@ -366,6 +378,7 @@ export default function WalkMode() {
   }, [lang]);
 
   const onResult = useCallback((r: SceneResult) => {
+    if (!autoAlertsRef.current) return;          // voice-only mode: stay quiet unless asked
     const h = pickAlert(r);
     if (h) speak(h);
   }, [speak]);
@@ -461,7 +474,7 @@ export default function WalkMode() {
     const unlocking = audio.unlock();
     getVoice().start(lang);                      // mic permission prompt on first use
     walk.start();                                // runs until Stop, don't await; camera prompt on first use
-    void startFast(++fastGen.current);
+    if (autoAlerts) void startFast(++fastGen.current);
     log("info", `started (${lang}${MOCK ? ", MOCK" : ""})`);
     setWalking(true);
     setStatus("walking");
@@ -536,6 +549,20 @@ export default function WalkMode() {
   }
   useLayoutEffect(() => { onVoiceRef.current = onVoice; });
 
+  function toggleAutoAlerts() {
+    const next = !autoAlerts;
+    setAutoAlerts(next);
+    log("info", `auto alerts ${next ? "on" : "off"}`);
+    if (!walking) return;
+    if (next) {
+      void startFast(++fastGen.current);
+    } else {
+      fastGen.current++;
+      fastStop.current?.();
+      fastStop.current = null;
+    }
+  }
+
   async function switchLang() {
     const next = lang === "en" ? "fr" : "en";
     setLang(next);
@@ -573,12 +600,18 @@ export default function WalkMode() {
                 <li>{t.cmdRead}</li>
               </ul>
             </div>
+            <div className="setting">
+              <span>{t.autoLabel}</span>
+              <button className={`auto${autoAlerts ? " on" : ""}`} onClick={toggleAutoAlerts} aria-pressed={autoAlerts}>
+                {autoAlerts ? t.autoOn : t.autoOff}
+              </button>
+            </div>
           </div>
         )}
       </div>
 
       {walking && (
-        <section className={`alert ${shown?.level ?? "none"}`} aria-live="polite">
+        <section className={`alert ${shown?.level ?? "none"}${(shown?.text.length ?? 0) > 40 ? " long" : ""}`} aria-live="polite">
           <span className="arrow" aria-hidden="true">{shown?.direction ? ARROW[shown.direction] : shown ? "•" : ""}</span>
           <span className="text">{shown?.text ?? t.listening}</span>
         </section>
@@ -603,7 +636,8 @@ export default function WalkMode() {
 
 Built in `web/src/styles/walk.css`. Colours come from the white cane: near-black `#0f1113`, white, and the red tip `#e0362c` (urgent, Stop); amber `#f3b21b` = warning, steel `#7d8ea3` = info. Flat and high-contrast, system font, no gradients or decorative motion (the earlier gradient/serif look read as generic).
 - **Setup screen:** tagline + 3 wearing steps (EN/FR), one big white **Start walk** button
-- **Walking:** status dot, camera, **alert panel** with a direction arrow (← ↑ →) and an urgency colour bar, a big white **What's ahead?** target filling the bottom, a red outlined **Stop**
+- **Walking:** status dot, **the camera fills most of the screen**, **alert panel** with a direction arrow (← ↑ →) and an urgency colour bar (long "read this" answers switch to smaller text and scroll inside the panel), a small white **What's ahead?** and a red outlined **Stop** side by side
+- **Automatic alerts are OFF by default** (setting on the setup screen): in testing the fast layer + Gemini hazards flooded the screen, so for now SeeWalk only speaks when asked ("SeeWalk, …") plus the safety messages. Turn it on to bring back automatic warnings
 - Caption text is 26–36 px bold: that's what viewers read in the video
 
 ### Step 7: Build without the backend

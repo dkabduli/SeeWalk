@@ -37,6 +37,12 @@ export default function WalkMode() {
   const [walking, setWalking] = useState(false);
   const [shown, setShown] = useState<Shown | null>(null);
   const [status, setStatus] = useState<Status>("idle");
+  // Automatic announcements (Gemini hazards + the fast layer's people/bikes/cars) are OFF by default
+  // for now: in testing they flooded the screen. With them off, SeeWalk only speaks when asked
+  // ("SeeWalk, …"), plus the safety messages (no connection, camera blocked).
+  const [autoAlerts, setAutoAlerts] = useState(false);
+  const autoAlertsRef = useRef(autoAlerts);
+  useLayoutEffect(() => { autoAlertsRef.current = autoAlerts; });
   const t = strings[lang];
 
   // Only one alert at a time. Each alert gets an id; if a newer one starts (urgent, or the
@@ -76,6 +82,7 @@ export default function WalkMode() {
   }, [lang]);
 
   const onResult = useCallback((r: SceneResult) => {
+    if (!autoAlertsRef.current) return;          // voice-only mode: stay quiet unless asked
     const h = pickAlert(r);
     if (h) speak(h);
   }, [speak]);
@@ -171,7 +178,7 @@ export default function WalkMode() {
     const unlocking = audio.unlock();
     getVoice().start(lang);                      // mic permission prompt on first use
     walk.start();                                // runs until Stop, don't await; camera prompt on first use
-    void startFast(++fastGen.current);
+    if (autoAlerts) void startFast(++fastGen.current);
     log("info", `started (${lang}${MOCK ? ", MOCK" : ""})`);
     setWalking(true);
     setStatus("walking");
@@ -246,6 +253,20 @@ export default function WalkMode() {
   }
   useLayoutEffect(() => { onVoiceRef.current = onVoice; });
 
+  function toggleAutoAlerts() {
+    const next = !autoAlerts;
+    setAutoAlerts(next);
+    log("info", `auto alerts ${next ? "on" : "off"}`);
+    if (!walking) return;
+    if (next) {
+      void startFast(++fastGen.current);
+    } else {
+      fastGen.current++;
+      fastStop.current?.();
+      fastStop.current = null;
+    }
+  }
+
   async function switchLang() {
     const next = lang === "en" ? "fr" : "en";
     setLang(next);
@@ -283,12 +304,18 @@ export default function WalkMode() {
                 <li>{t.cmdRead}</li>
               </ul>
             </div>
+            <div className="setting">
+              <span>{t.autoLabel}</span>
+              <button className={`auto${autoAlerts ? " on" : ""}`} onClick={toggleAutoAlerts} aria-pressed={autoAlerts}>
+                {autoAlerts ? t.autoOn : t.autoOff}
+              </button>
+            </div>
           </div>
         )}
       </div>
 
       {walking && (
-        <section className={`alert ${shown?.level ?? "none"}`} aria-live="polite">
+        <section className={`alert ${shown?.level ?? "none"}${(shown?.text.length ?? 0) > 40 ? " long" : ""}`} aria-live="polite">
           <span className="arrow" aria-hidden="true">{shown?.direction ? ARROW[shown.direction] : shown ? "•" : ""}</span>
           <span className="text">{shown?.text ?? t.listening}</span>
         </section>
