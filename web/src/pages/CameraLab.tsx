@@ -4,6 +4,7 @@ import type { Lang, SceneResult, SystemEvent } from "../api/types";
 import { captureFrame, looksCovered } from "../camera/captureFrame";
 import { createVoiceCommand } from "../camera/voiceCommand";
 import { useWalkLoop } from "../camera/useWalkLoop";
+import "../styles/camera-lab.css";
 
 /** Camera lab: a debug page for Abdul's piece (camera, snapshot loop, events, voice command).
  *  Not the real UI (that's Jibril's WalkMode); it shows everything the loop does so it can be
