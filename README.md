@@ -47,7 +47,7 @@ Drag to turn, scroll to zoom. Source: [`docs/signal-path-3d.html`](docs/signal-p
 ┌───────────────────────────────────────┐              ┌───────────────────────────────────────┐
 │ 1. CAPTURE                            │              │                                       │
 │    rear camera → canvas → 768px JPEG  │  2. POST     │ 3. GEMINI 3.5 Flash-Lite              │
-│    every ~1.5 s, one request at a time├──/analyze───►│    thinking_level = "minimal"         │
+│    every ~0.8 s, up to 2 at a time    ├──/analyze───►│    thinking_level = "minimal"         │
 │                                       │ {image,lang} │    structured JSON (SceneResult)      │
 │                                       │              │                                       │
 │ 5. DECIDE (alert filter)              │◄────JSON─────┤ 4. SceneResult {hazards[], unclear}   │

@@ -43,3 +43,27 @@ PHRASES: dict[str, dict[str, str]] = {
     "walk_started": {"en": "Walk mode on", "fr": "Mode marche activé"},
     "walk_stopped": {"en": "Walk mode off", "fr": "Mode marche désactivé"},
 }
+
+
+# Street alerts, one clip per direction, so they play instantly (no live voice): "st_<type>_<direction>"
+STREET = {
+    "pothole": ("Pothole", "Nid-de-poule"),
+    "uneven_surface": ("Uneven ground", "Sol inégal"),
+    "curb_or_dropoff": ("Curb", "Bordure"),
+    "stairs_down": ("Stairs going down", "Escalier qui descend"),
+    "steps_up": ("Steps up", "Marches qui montent"),
+    "construction": ("Construction", "Travaux"),
+    "head_height_obstacle": ("Obstacle at head height", "Obstacle à hauteur de tête"),
+    "stop_sign": ("Stop sign", "Panneau d'arrêt"),
+    "crosswalk": ("Crosswalk", "Passage pour piétons"),
+    "traffic_light": ("Traffic light", "Feu de circulation"),
+    "door": ("Door", "Porte"),
+}
+WHERE = {
+    "ahead": ("ahead", "devant"),
+    "left": ("on your left", "à gauche"),
+    "right": ("on your right", "à droite"),
+}
+for _type, (_en, _fr) in STREET.items():
+    for _dir, (_en_where, _fr_where) in WHERE.items():
+        PHRASES[f"st_{_type}_{_dir}"] = {"en": f"{_en} {_en_where}", "fr": f"{_fr} {_fr_where}"}

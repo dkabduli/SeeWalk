@@ -3,7 +3,7 @@ export type Lang = "en" | "fr";
 export type HazardType =
   | "person" | "bike" | "car" | "crosswalk" | "stop_sign" | "pothole" | "uneven_surface"
   | "head_height_obstacle" | "obstacle_in_path" | "construction" | "curb_or_dropoff"
-  | "stairs_down" | "traffic_light" | "other";
+  | "stairs_down" | "steps_up" | "traffic_light" | "door" | "other";
 
 export interface Hazard {
   type: HazardType;

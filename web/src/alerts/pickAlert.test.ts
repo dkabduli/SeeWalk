@@ -40,16 +40,16 @@ describe("pickAlert", () => {
     expect(mod.pickAlert(scene(hz({ type: "stairs_down", urgency: 1 })))).not.toBeNull();
   });
 
-  it("warnings wait 8 s, information (crosswalk, stop sign) 20 s", () => {
+  it("warnings wait 8 s, information (crosswalk, stop sign) 45 s", () => {
     mod.pickAlert(scene(hz({ type: "pothole", urgency: 2 })));
     mod.pickAlert(scene(hz({ urgency: 3 })));
     vi.setSystemTime(7000);
     expect(mod.pickAlert(scene(hz({ type: "pothole", urgency: 2 })))).toBeNull();
     vi.setSystemTime(8100);
     expect(mod.pickAlert(scene(hz({ type: "pothole", urgency: 2 })))).not.toBeNull();
-    vi.setSystemTime(19000);
+    vi.setSystemTime(44000);
     expect(mod.pickAlert(scene(hz({ urgency: 3 })))).toBeNull();
-    vi.setSystemTime(20100);
+    vi.setSystemTime(45100);
     expect(mod.pickAlert(scene(hz({ urgency: 3 })))).not.toBeNull();
   });
 
@@ -61,7 +61,7 @@ describe("pickAlert", () => {
   it("'What's ahead?' (ignoreRepeat) answers even if just said, without muting it later", () => {
     mod.pickAlert(scene(hz({})));
     expect(mod.pickAlert(scene(hz({})), { ignoreRepeat: true })).not.toBeNull();
-    vi.setSystemTime(20100);
+    vi.setSystemTime(45100);
     expect(mod.pickAlert(scene(hz({})))).not.toBeNull(); // not pushed a minute into the future
   });
 
@@ -80,6 +80,50 @@ describe("pickAlert", () => {
     expect(mod.pickAlert(scene(hz({ direction: "ahead" })))).not.toBeNull();
     vi.setSystemTime(3000);
     expect(mod.pickAlert(scene(hz({ direction: "right", phrase: "Stop sign on your right" })))).toBeNull();
+  });
+});
+
+describe("when to say it", () => {
+  const pothole = (distance: Hazard["distance"]) => scene(hz({ type: "pothole", urgency: distance === "close" ? 1 : 2, distance }));
+
+  it("things you can trip on: at first sighting, then once more when close", () => {
+    expect(mod.pickAlert(pothole("near"))).not.toBeNull();  // "Pothole ahead", ~5 m away
+    vi.setSystemTime(1000);
+    expect(mod.pickAlert(pothole("near"))).toBeNull();      // still there: quiet
+    vi.setSystemTime(3000);
+    expect(mod.pickAlert(pothole("close"))).not.toBeNull(); // under 2 m: last warning
+    vi.setSystemTime(4000);
+    expect(mod.pickAlert(pothole("close"))).toBeNull();     // said once, not every snapshot
+  });
+
+  it("first seen already close: said once, not twice", () => {
+    expect(mod.pickAlert(pothole("close"))).not.toBeNull();
+    vi.setSystemTime(1000);
+    expect(mod.pickAlert(pothole("close"))).toBeNull();
+  });
+
+  it("a new pothole later gets its own close-up warning", () => {
+    mod.pickAlert(pothole("near"));
+    vi.setSystemTime(1000);
+    mod.pickAlert(pothole("close"));
+    vi.setSystemTime(20_000);                                // another one, further down the street
+    expect(mod.pickAlert(pothole("near"))).not.toBeNull();
+    vi.setSystemTime(22_000);
+    expect(mod.pickAlert(pothole("close"))).not.toBeNull();
+  });
+
+  it("a stop sign 20 ft away (near) or further (far) is said at first sighting, and only once", () => {
+    expect(mod.pickAlert(scene(hz({ distance: "far" })))).not.toBeNull();
+    vi.setSystemTime(3000);
+    expect(mod.pickAlert(scene(hz({ distance: "near", direction: "right" })))).toBeNull();
+    vi.setSystemTime(6000);
+    expect(mod.pickAlert(scene(hz({ distance: "close", direction: "right" })))).toBeNull(); // no close-up repeat
+  });
+
+  it("street clips are per direction; other things have none", () => {
+    expect(mod.streetClip(hz({ direction: "right" }))).toBe("st_stop_sign_right");
+    expect(mod.streetClip(hz({ type: "door" }))).toBe("st_door_ahead");
+    expect(mod.streetClip(hz({ type: "person" }))).toBeNull();
   });
 });
 

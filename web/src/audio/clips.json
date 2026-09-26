@@ -114,5 +114,137 @@
   "walk_stopped": {
     "en": "Walk mode off",
     "fr": "Mode marche désactivé"
+  },
+  "st_pothole_ahead": {
+    "en": "Pothole ahead",
+    "fr": "Nid-de-poule devant"
+  },
+  "st_pothole_left": {
+    "en": "Pothole on your left",
+    "fr": "Nid-de-poule à gauche"
+  },
+  "st_pothole_right": {
+    "en": "Pothole on your right",
+    "fr": "Nid-de-poule à droite"
+  },
+  "st_uneven_surface_ahead": {
+    "en": "Uneven ground ahead",
+    "fr": "Sol inégal devant"
+  },
+  "st_uneven_surface_left": {
+    "en": "Uneven ground on your left",
+    "fr": "Sol inégal à gauche"
+  },
+  "st_uneven_surface_right": {
+    "en": "Uneven ground on your right",
+    "fr": "Sol inégal à droite"
+  },
+  "st_curb_or_dropoff_ahead": {
+    "en": "Curb ahead",
+    "fr": "Bordure devant"
+  },
+  "st_curb_or_dropoff_left": {
+    "en": "Curb on your left",
+    "fr": "Bordure à gauche"
+  },
+  "st_curb_or_dropoff_right": {
+    "en": "Curb on your right",
+    "fr": "Bordure à droite"
+  },
+  "st_stairs_down_ahead": {
+    "en": "Stairs going down ahead",
+    "fr": "Escalier qui descend devant"
+  },
+  "st_stairs_down_left": {
+    "en": "Stairs going down on your left",
+    "fr": "Escalier qui descend à gauche"
+  },
+  "st_stairs_down_right": {
+    "en": "Stairs going down on your right",
+    "fr": "Escalier qui descend à droite"
+  },
+  "st_steps_up_ahead": {
+    "en": "Steps up ahead",
+    "fr": "Marches qui montent devant"
+  },
+  "st_steps_up_left": {
+    "en": "Steps up on your left",
+    "fr": "Marches qui montent à gauche"
+  },
+  "st_steps_up_right": {
+    "en": "Steps up on your right",
+    "fr": "Marches qui montent à droite"
+  },
+  "st_construction_ahead": {
+    "en": "Construction ahead",
+    "fr": "Travaux devant"
+  },
+  "st_construction_left": {
+    "en": "Construction on your left",
+    "fr": "Travaux à gauche"
+  },
+  "st_construction_right": {
+    "en": "Construction on your right",
+    "fr": "Travaux à droite"
+  },
+  "st_head_height_obstacle_ahead": {
+    "en": "Obstacle at head height ahead",
+    "fr": "Obstacle à hauteur de tête devant"
+  },
+  "st_head_height_obstacle_left": {
+    "en": "Obstacle at head height on your left",
+    "fr": "Obstacle à hauteur de tête à gauche"
+  },
+  "st_head_height_obstacle_right": {
+    "en": "Obstacle at head height on your right",
+    "fr": "Obstacle à hauteur de tête à droite"
+  },
+  "st_stop_sign_ahead": {
+    "en": "Stop sign ahead",
+    "fr": "Panneau d'arrêt devant"
+  },
+  "st_stop_sign_left": {
+    "en": "Stop sign on your left",
+    "fr": "Panneau d'arrêt à gauche"
+  },
+  "st_stop_sign_right": {
+    "en": "Stop sign on your right",
+    "fr": "Panneau d'arrêt à droite"
+  },
+  "st_crosswalk_ahead": {
+    "en": "Crosswalk ahead",
+    "fr": "Passage pour piétons devant"
+  },
+  "st_crosswalk_left": {
+    "en": "Crosswalk on your left",
+    "fr": "Passage pour piétons à gauche"
+  },
+  "st_crosswalk_right": {
+    "en": "Crosswalk on your right",
+    "fr": "Passage pour piétons à droite"
+  },
+  "st_traffic_light_ahead": {
+    "en": "Traffic light ahead",
+    "fr": "Feu de circulation devant"
+  },
+  "st_traffic_light_left": {
+    "en": "Traffic light on your left",
+    "fr": "Feu de circulation à gauche"
+  },
+  "st_traffic_light_right": {
+    "en": "Traffic light on your right",
+    "fr": "Feu de circulation à droite"
+  },
+  "st_door_ahead": {
+    "en": "Door ahead",
+    "fr": "Porte devant"
+  },
+  "st_door_left": {
+    "en": "Door on your left",
+    "fr": "Porte à gauche"
+  },
+  "st_door_right": {
+    "en": "Door on your right",
+    "fr": "Porte à droite"
   }
 }

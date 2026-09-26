@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { MOCK, tts } from "../api/client";
 import type { Hazard, Lang, ListenResult, SceneResult, SystemEvent } from "../api/types";
-import { fallbackClip, panFor, pickAlert, streetOnly } from "../alerts/pickAlert";
+import { fallbackClip, panFor, pickAlert, streetClip, streetOnly } from "../alerts/pickAlert";
 import { audio } from "../audio/AudioEngine";
 import clips from "../audio/clips.json";
 import { captureFrame } from "../camera/captureFrame";
@@ -69,6 +69,15 @@ export default function WalkMode() {
     log("say", `${h.phrase} (${h.type}/${h.direction}/${h.distance} u${h.urgency}${asked ? ", asked" : ""})`);
     try {
       const pan = panFor(h);
+      // Street alerts play a pre-recorded clip ("Stop sign on your right"): instant, no ~0.4 s wait
+      // for the live voice. Answers to questions use Gemini's own words.
+      const instant = !asked ? streetClip(h) : null;
+      if (instant && audio.hasClip(lang, instant)) {
+        setShown({ text: (clips as ClipTable)[instant][lang], direction: h.direction, level: levelOf(h) });
+        await audio.playTone(pan, h.urgency === 1 ? 1200 : 1000);
+        if (current()) await audio.playClip(lang, instant, pan);
+        return;
+      }
       setShown({ text: h.phrase, direction: h.direction, level: levelOf(h) });
       await audio.playTone(pan, h.urgency === 1 ? 1200 : 1000);
       if (!current()) return;
@@ -231,7 +240,8 @@ export default function WalkMode() {
     setWalking(true);
     setStatus("walking");
     await unlocking;
-    await audio.preload(lang);                   // ~1 s; the first snapshot takes longer anyway
+    await audio.preload(lang, (k) => !k.startsWith("st_")); // start, intro, system messages first
+    void audio.preload(lang);                    // then the street clips, while the intro plays
     if (introPlayed()) {
       await audio.playClip(lang, "walk_started");
     } else {

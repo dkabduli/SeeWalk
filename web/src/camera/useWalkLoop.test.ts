@@ -92,36 +92,36 @@ afterEach(() => {
 // ---------- tests ----------
 
 describe("useWalkLoop", () => {
-  it("sends one snapshot at a time and waits out the interval", async () => {
+  it("a new snapshot every 0.8 s, at most 2 at Gemini at once, never a previous frame", async () => {
     const { walk, onResult } = setup();
     act(() => { void walk().start(); });
     await tick();
     expect(calls).toHaveLength(1);
-    expect(calls[0].prev).toBeNull(); // first snapshot has no previous frame
-
-    await tick(1000);
-    calls[0].resolve(RESULT);          // Gemini answers after 1 s
-    await tick();
-    expect(onResult).toHaveBeenCalledWith(RESULT);
-    expect(calls).toHaveLength(1);    // still waiting: interval is 1.5 s from the round's start
-
-    await tick(499);
+    await tick(799);
     expect(calls).toHaveLength(1);
-    await tick(2);
-    expect(calls).toHaveLength(2);
-    expect(calls[1].prev).toBe("frame1"); // previous frame sent for motion
-    expect(maxInFlight).toBe(1);
+    await tick(1);
+    expect(calls).toHaveLength(2);    // didn't wait for the first answer
+    await tick(3000);
+    expect(calls).toHaveLength(2);    // full: 2 in flight, so no third
+    calls[0].resolve(RESULT);
+    await tick(100);
+    expect(onResult).toHaveBeenCalledWith(RESULT);
+    expect(calls).toHaveLength(3);    // room again: next one goes right away
+    expect(maxInFlight).toBe(2);
+    expect(calls.every((c) => c.prev === null)).toBe(true);
   });
 
-  it("doesn't send a previous frame older than 4 s", async () => {
-    const { walk } = setup();
+  it("an older answer arriving after a newer one is dropped", async () => {
+    const { walk, onResult } = setup();
     act(() => { void walk().start(); });
+    await tick(800);
+    const newer = { ...RESULT, summary: "newer" };
+    calls[1].resolve(newer);
     await tick();
-    await tick(4500);                  // Gemini is very slow this time
-    calls[0].resolve(RESULT);
+    calls[0].resolve(RESULT);          // slow answer about an older snapshot
     await tick();
-    expect(calls).toHaveLength(2);    // interval already passed: next one goes right away
-    expect(calls[1].prev).toBeNull();
+    expect(onResult).toHaveBeenCalledTimes(1);
+    expect(onResult).toHaveBeenCalledWith(newer);
   });
 
   it("never runs two loops after rapid Stop/Start, and drops results after Stop", async () => {
@@ -138,10 +138,10 @@ describe("useWalkLoop", () => {
     calls[0].resolve(RESULT);          // answers for the stopped loops arrive late
     calls[1].resolve(RESULT);
     await tick(10_000);
-    // Only the live loop keeps going, one request at a time
+    // Only the live loop keeps going, at most 2 requests at a time
     const live = calls.slice(2);
     expect(live.length).toBeGreaterThan(0);
-    expect(inFlight).toBeLessThanOrEqual(1);
+    expect(inFlight).toBeLessThanOrEqual(2);
     expect(onResult).not.toHaveBeenCalled(); // stale answers were dropped
   });
 
@@ -153,7 +153,7 @@ describe("useWalkLoop", () => {
       calls[calls.length - 1].resolve(RESULT);
       await tick(1500);
     }
-    expect(maxInFlight).toBe(1);
+    expect(maxInFlight).toBeLessThanOrEqual(2);
     expect(onResult.mock.calls.length).toBeLessThanOrEqual(6);
   });
 
@@ -322,7 +322,7 @@ describe("useWalkLoop", () => {
     expect(calls).toHaveLength(0);
 
     nextFrame = { brightness: 120, contrast: 40 }; // finger removed
-    await tick(1500);
+    await tick(800);
     expect(calls).toHaveLength(1);
   });
 
@@ -332,7 +332,7 @@ describe("useWalkLoop", () => {
     act(() => { void walk().start(); });
     await tick(4000);
     expect(onSystem).not.toHaveBeenCalled();
-    expect(calls).toHaveLength(1);
+    expect(calls).toHaveLength(2);            // sent to Gemini (2 in flight, never answered)
   });
 
   it("camera not live (iOS interruption) twice → camera_blocked; What's ahead? says so", async () => {

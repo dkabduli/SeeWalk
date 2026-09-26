@@ -5,14 +5,14 @@ from pydantic import BaseModel, Field
 HazardType = Literal[
     "person", "bike", "car", "crosswalk", "stop_sign", "pothole", "uneven_surface",
     "head_height_obstacle", "obstacle_in_path", "construction", "curb_or_dropoff",
-    "stairs_down", "traffic_light", "other",
+    "stairs_down", "steps_up", "traffic_light", "door", "other",
 ]
 
 
 class Hazard(BaseModel):
     type: HazardType
     direction: Literal["left", "ahead", "right"]
-    distance: Literal["close", "near", "far"]
+    distance: Literal["close", "near", "far"] = Field(description="close = under 2 m, near = 2-6 m, far = 6-15 m")
     urgency: int = Field(ge=1, le=3, description="1 = immediate danger within ~2 m, 2 = obstacle or surface problem in the path, 3 = information")
     confidence: float = Field(ge=0, le=1)
     approaching: bool = Field(description="True if it is moving toward the walker between the two frames")

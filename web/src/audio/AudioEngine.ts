@@ -24,11 +24,11 @@ export class AudioEngine {
     await this.ctx.resume();
   }
 
-  /** Decode every bundled clip for a language so fallbacks play instantly. */
-  async preload(lang: Lang) {
+  /** Decode the bundled clips for a language (all, or those `only` picks) so they play instantly. */
+  async preload(lang: Lang, only: (key: string) => boolean = () => true) {
     // allSettled: one missing clip must not break Start
     await Promise.allSettled(
-      Object.keys(clips).map(async (key) => {
+      Object.keys(clips).filter(only).map(async (key) => {
         const id = `${lang}/${key}`;
         if (this.buffers.has(id)) return;
         const res = await fetch(`/audio/${lang}/${key}.mp3`);

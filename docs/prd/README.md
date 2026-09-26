@@ -13,7 +13,7 @@ One PRD per person. Each one walks you through your piece step by step, with cod
 
 ## The product in one paragraph
 
-SeeWalk is a phone web app for blind and low-vision walkers. The phone hangs on the chest, shows a live rear-camera feed, and every ~1.5 s grabs a snapshot. The server sends that snapshot (plus the previous one, so Gemini can tell what's approaching) to **Gemini 3.5 Flash-Lite**, which returns hazards as JSON. The phone picks the one worth saying, plays a tone in the left/right ear, and plays the hazard's short phrase in **ElevenLabs'** River voice. Camera to ears: about 1.5–2 s. For the hackathon, the deliverable is **a working app filmed in a ~2 minute video**.
+SeeWalk is a phone web app for blind and low-vision walkers. The phone hangs on the chest, shows a live rear-camera feed, and every ~0.8 s grabs a snapshot (up to 2 at Gemini at once). The server sends it to **Gemini 3.5 Flash-Lite**, which returns hazards as JSON. The phone picks the street hazard worth saying (potholes, curbs, steps, doors, construction, stop signs, crosswalks, traffic lights), plays a tone in the left/right ear, then a pre-recorded **ElevenLabs** River clip ("Stop sign on your right"). Questions ("SeeWalk, …") are answered in River's live voice. Hazard in view → spoken: about 2 s. For the hackathon, the deliverable is **a working app filmed in a ~2 minute video**.
 
 ```
  Abdul                    Aroha                                   Jibril                              Siddig

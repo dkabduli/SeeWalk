@@ -31,5 +31,6 @@ export default defineConfig({
   plugins: [react(), labLog],
   server: { host: true, allowedHosts: true, proxy: api },
   preview: { host: true, allowedHosts: true, proxy: api },
-  test: { environment: "jsdom" },
+  // Tests use the built-in timings, whatever a local .env sets
+  test: { environment: "jsdom", env: { VITE_FRAME_INTERVAL_MS: "" } },
 });

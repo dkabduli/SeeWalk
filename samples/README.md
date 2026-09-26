@@ -24,15 +24,53 @@ The first 8 are at night; the `day_…` ones are daylight (what the demo is film
 
 Source photos: `IMG_6362`–`IMG_6378` (Abdul). Skipped `IMG_6365` (another close-up of the same parking signs) and `IMG_6369` (near-duplicate of `IMG_6368`).
 
+## Photos from Wikimedia Commons (`web_…`)
+Added so the prompt is tested on more street hazards than we could photograph ourselves. Same processing (768 px, JPEG q70, metadata stripped). Landscape photos are kept as they are.
+
+| File | What's in it | Gemini should report | Must NOT report |
+|---|---|---|---|
+| `web_broken_sidewalk.jpg` | Sidewalk with broken, patched asphalt | `uneven_surface` ahead | nothing |
+| `web_building_entrance_far.jpg` | Glass building entrance ~15 m away, one cone | `door` (far) at most | urgent hazards |
+| `web_clear_empty_sidewalk.jpg` | Empty sidewalk beside a road (negative) | no street alert | any street alert |
+| `web_clear_tree_lined_sidewalk.jpg` | Sidewalk under high oak branches | nothing, or real cracks as `uneven_surface` | `head_height_obstacle` (branches are high) |
+| `web_construction_barriers_cones.jpg` | Barriers and cones across the path | `construction` ahead |  |
+| `web_heaved_sidewalk_tree_root.jpg` | Pavement lifted by a tree root | `uneven_surface` |  |
+| `web_hole_in_pavement.jpg` | Hole in the pavement, seen from above | `pothole` close |  |
+| `web_plaza_sidewalk_benches.jpg` | Wide plaza sidewalk, benches, manhole cover (negative) | no street alert | manhole cover as an obstacle |
+| `web_pothole_closeup.jpg` | Pothole close-up | `pothole` |  |
+| `web_revolving_doors_ahead.jpg` | Two steps up to revolving doors | `steps_up` + `door` ahead | `stairs_down` |
+| `web_sidewalk_closed_cones.jpg` | 'Sidewalk closed ahead' sign with cones | `construction` ahead |  |
+| `web_stop_sign_20ft_behind_parking_signs.jpg` | Stop sign ~20 ft (6 m) away behind parking signs | `stop_sign` (must: the 20 ft case) | parking signs as hazards |
+| `web_stop_sign_beside_path.jpg` | Stop sign beside a narrow path | `stop_sign` left |  |
+| `web_traffic_light_stop_sign_intersection.jpg` | Intersection: traffic lights, stop sign, crosswalk | `traffic_light`, `stop_sign`, `crosswalk` | any light colour or 'go' |
+
+### Credits (all freely licensed; resized)
+| File | Author | License | Source |
+|---|---|---|---|
+| `web_broken_sidewalk.jpg` | Unregistrierter Nutzer | CC BY-SA 4.0 | [File:Zustand des Gehsteiges ist eine Stolperfalle (Max-Planck-Straße) (2024-06-21) 01.jpg](https://commons.wikimedia.org/wiki/File:Zustand_des_Gehsteiges_ist_eine_Stolperfalle_(Max-Planck-Stra%C3%9Fe)_(2024-06-21)_01.jpg) |
+| `web_building_entrance_far.jpg` | Solomon203 | CC BY 3.0 | [File:China Television Building glass doors 20100426.jpg](https://commons.wikimedia.org/wiki/File:China_Television_Building_glass_doors_20100426.jpg) |
+| `web_clear_empty_sidewalk.jpg` | Apelcini | CC BY-SA 4.0 | [File:Empty Winter Sidewalk.jpg](https://commons.wikimedia.org/wiki/File:Empty_Winter_Sidewalk.jpg) |
+| `web_clear_tree_lined_sidewalk.jpg` | Infrogmation of New Orleans | CC BY-SA 4.0 | [File:Baronne Street at Napoleon Double Sign, Uptown New Orleans - 04.jpg](https://commons.wikimedia.org/wiki/File:Baronne_Street_at_Napoleon_Double_Sign,_Uptown_New_Orleans_-_04.jpg) |
+| `web_construction_barriers_cones.jpg` | Samuel Zeller samuelzeller | CC0 | [File:London sidewalk construction (Unsplash).jpg](https://commons.wikimedia.org/wiki/File:London_sidewalk_construction_(Unsplash).jpg) |
+| `web_heaved_sidewalk_tree_root.jpg` | Eden, Janine and Jim | CC BY 2.0 | [File:Cracked sidewalk in Manhattan.jpg](https://commons.wikimedia.org/wiki/File:Cracked_sidewalk_in_Manhattan.jpg) |
+| `web_hole_in_pavement.jpg` | ŠJů | CC BY 4.0 | [File:Krč, Vídeňská, díra v chodníku.jpg](https://commons.wikimedia.org/wiki/File:Kr%C4%8D,_V%C3%ADde%C5%88sk%C3%A1,_d%C3%ADra_v_chodn%C3%ADku.jpg) |
+| `web_plaza_sidewalk_benches.jpg` | Eric Fischer | CC BY 2.0 | [File:Empty sidewalk with a van parked on it (18623476739).jpg](https://commons.wikimedia.org/wiki/File:Empty_sidewalk_with_a_van_parked_on_it_(18623476739).jpg) |
+| `web_pothole_closeup.jpg` | Unregistrierter Nutzer | CC BY-SA 4.0 | [File:Zustand des Gehsteiges ist eine Stolperfalle (Max-Planck-Straße) (2024-06-21) 03.jpg](https://commons.wikimedia.org/wiki/File:Zustand_des_Gehsteiges_ist_eine_Stolperfalle_(Max-Planck-Stra%C3%9Fe)_(2024-06-21)_03.jpg) |
+| `web_revolving_doors_ahead.jpg` | Solomon203 | CC BY 3.0 | [File:Chung Sheng Building entrance 20100426.jpg](https://commons.wikimedia.org/wiki/File:Chung_Sheng_Building_entrance_20100426.jpg) |
+| `web_sidewalk_closed_cones.jpg` | Missvain | CC BY 4.0 | [File:Crosswalk light construction in Sonoma - January 2024 - Sarah Stierch.jpg](https://commons.wikimedia.org/wiki/File:Crosswalk_light_construction_in_Sonoma_-_January_2024_-_Sarah_Stierch.jpg) |
+| `web_stop_sign_20ft_behind_parking_signs.jpg` | Artaxerxes | CC BY-SA 4.0 | [File:Street signs Church and Main Streets downtown Saint Johnsbury VT September 2017.jpg](https://commons.wikimedia.org/wiki/File:Street_signs_Church_and_Main_Streets_downtown_Saint_Johnsbury_VT_September_2017.jpg) |
+| `web_stop_sign_beside_path.jpg` | Ser Amantio di Nicolao | CC BY-SA 4.0 | [File:Franklin Sidewalk - corner by a stop sign.jpg](https://commons.wikimedia.org/wiki/File:Franklin_Sidewalk_-_corner_by_a_stop_sign.jpg) |
+| `web_traffic_light_stop_sign_intersection.jpg` | The Bushranger | CC BY-SA 4.0 | [File:Pedestrian crossing signal on EB US98, Carrabelle Beach, Florida.jpg](https://commons.wikimedia.org/wiki/File:Pedestrian_crossing_signal_on_EB_US98,_Carrabelle_Beach,_Florida.jpg) |
+
 ## Still needed (daylight, chest height, phone upright)
 - [ ] Person walking toward the camera (a teammate), from the left and from the right
 - [ ] Bike or scooter **moving** on a path (parked ones are covered)
 - [ ] Car pulling out of a driveway / crossing the path
 - [ ] Stairs going down, and a curb drop seen from the sidewalk
-- [ ] Pothole or broken pavement
+- [x] Pothole or broken pavement (web photos)
 - [ ] Low branch at head height
-- [ ] Construction fence or sign on the sidewalk
-- [ ] A clear, empty path (should report nothing)
+- [x] Construction fence or sign on the sidewalk (web photos)
+- [x] A clear, empty path (web photos)
 
 ## Adding photos
 Use the script. It rotates the photo upright, resizes to 768 px, saves JPEG q70 and **drops all metadata (GPS)**. Plain `sips` keeps the rotation flag and GPS, so don't use it.

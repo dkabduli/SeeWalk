@@ -64,7 +64,7 @@ Scout locations on campus Saturday morning: a quiet path, a real stop sign, a pa
 - **Film the production build, not the dev server** (faster on the phone, and nobody's file save can reload the page mid-take). On the server laptop:
   ```bash
   cd web
-  echo "VITE_FRAME_INTERVAL_MS=1500" > .env.local   # baked in at build time
+  echo "VITE_FRAME_INTERVAL_MS=800" > .env.local    # baked in at build time
   npm run build && npm run preview                 # serves on port 4173
   cloudflared tunnel --url http://localhost:4173   # new URL: re-share it
   ```
@@ -129,7 +129,7 @@ So the demo doesn't depend on a laptop:
    sudo apt update && sudo apt install -y python3-venv caddy nodejs npm git
    git clone https://github.com/dkabduli/SeeWalk.git /srv/seewalk && cd /srv/seewalk
    cd server && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # + create .env
-   cd ../web && npm install && VITE_FRAME_INTERVAL_MS=1500 npm run build
+   cd ../web && npm install && VITE_FRAME_INTERVAL_MS=800 npm run build
    ```
 4. `/etc/caddy/Caddyfile` (replace the domain):
    ```
