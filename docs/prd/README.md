@@ -97,7 +97,7 @@ Request: `{ "text": "Person ahead, left", "lang": "en" }` → Response `200` `au
 | `stairs_down` | `stairs_down` |
 | `curb_or_dropoff` | `curb` |
 | `other` | none (only live TTS) |
-| system | `walk_started` `walk_stopped` `no_connection` `connection_back` `camera_blocked` `unclear` |
+| system | `walk_started` `walk_stopped` `no_connection` `connection_back` `camera_blocked` `unclear` `nothing_detected` |
 
 ### A fake result for building without the backend
 

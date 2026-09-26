@@ -29,6 +29,9 @@ You also handle keys, billing and merging PRs.
 | How the phone is worn | **Portrait, on a chest lanyard.** Snapshots come out 576×768 |
 | "What's ahead?" trigger | **Voice command** (your code) + **tap anywhere on the lower half of the screen** (Jibril's UI). Real Siri can't control a web app; that would need a native iOS app |
 | "What's ahead?" while the loop runs | **Jump the queue**: skip the wait and take the next snapshot now. Still one request at a time |
+| Voice trigger phrase | **"What's ahead?"** (FR: "Qu'y a-t-il devant ?"), no wake word |
+| "What's ahead?" finds nothing | Say **"Nothing detected"** / "Rien de détecté" (never "clear" or "safe"). Jibril plays the `nothing_detected` clip |
+| Snapshot interval | **1.5 s** for filming (billing on), 5 s during development |
 | Skip blurry / unchanged frames? | **No.** Send every snapshot; keep it simple |
 | Night | **Daylight only** (V0 scope). Only a covered lens counts as "camera blocked" |
 | Testing | iPhone + Mac with a cable (Safari Web Inspector) |

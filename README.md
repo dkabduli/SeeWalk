@@ -155,7 +155,7 @@ result = SceneResult.model_validate_json(interaction.output_text)
 
 ### Offline fallback clips
 
-If `/tts` fails, the phone plays a bundled clip chosen by `type` (+ `direction` for person/bike/car). Keys and EN/FR text are in [`web/src/audio/clips.json`](web/src/audio/clips.json); the mp3s are in `web/public/audio/{en,fr}/`. System clips: `walk_started`, `walk_stopped`, `no_connection`, `connection_back`, `camera_blocked`, `unclear`.
+If `/tts` fails, the phone plays a bundled clip chosen by `type` (+ `direction` for person/bike/car). Keys and EN/FR text are in [`web/src/audio/clips.json`](web/src/audio/clips.json); the mp3s are in `web/public/audio/{en,fr}/`. System clips: `walk_started`, `walk_stopped`, `no_connection`, `connection_back`, `camera_blocked`, `unclear`, `nothing_detected`.
 
 ### Fail out loud
 
@@ -166,7 +166,8 @@ Silence must never mean "all clear" by accident.
 | 2 failed `/analyze` calls in a row | low tone + "No connection, I can't see right now" (repeats every 20 s; "Connection back" on recovery) |
 | Camera stops or lens covered | low tone + "Camera blocked" |
 | `unclear: true` while walking | nothing |
-| `unclear: true` after tapping **"What's ahead?"** | "Unclear" |
+| `unclear: true` after asking **"What's ahead?"** | "Unclear" |
+| Nothing found after asking **"What's ahead?"** | "Nothing detected" (never "clear" or "safe") |
 
 ---
 

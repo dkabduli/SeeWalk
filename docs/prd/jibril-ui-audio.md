@@ -291,7 +291,13 @@ export default function WalkMode() {
       return;
     }
     const h = pickAlert(r, Date.now() + 60_000); // ignore the repeat rule: the user asked
-    if (h) await speak(h);
+    if (h) {
+      await speak(h);
+    } else {
+      // They asked, so never answer with silence, but never promise "safe" or "clear" either
+      setCaption(lang === "fr" ? "Rien de détecté" : "Nothing detected");
+      await audio.playClip(lang, "nothing_detected");
+    }
   }
   whatsAheadRef.current = whatsAhead;
 
@@ -351,7 +357,7 @@ In `index.css` (replace Vite's default):
 - [ ] Same hazard isn't repeated within 5 s; urgent interrupts
 - [ ] FR toggle → French voice, French captions and labels
 - [ ] `no_connection` / `camera_blocked` → low tone + clip + status line
-- [ ] "What's ahead?" (tap the lower half, or say it) answers within ~2 s; on a covered lens → "Unclear"
+- [ ] "What's ahead?" (tap the lower half, or say it) answers within ~2 s: the top hazard, "Nothing detected" if there's none, "Unclear" on a covered lens
 - [ ] Voice command started/stopped with the walk and switched with the language (if Abdul's testing says it's unreliable with Bluetooth, hide it and keep tap-anywhere)
 - [ ] VoiceOver pass done; PR merged
 

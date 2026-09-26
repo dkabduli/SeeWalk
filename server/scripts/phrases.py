@@ -23,6 +23,7 @@ PHRASES: dict[str, dict[str, str]] = {
     "construction": {"en": "Construction ahead", "fr": "Travaux devant"},
     # system
     "unclear": {"en": "Unclear", "fr": "Incertain"},
+    "nothing_detected": {"en": "Nothing detected", "fr": "Rien de détecté"},
     "no_connection": {"en": "No connection, I can't see right now", "fr": "Pas de connexion, je ne vois rien pour l'instant"},
     "connection_back": {"en": "Connection back", "fr": "Connexion rétablie"},
     "camera_blocked": {"en": "Camera blocked", "fr": "Caméra bloquée"},
