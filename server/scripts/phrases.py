@@ -21,14 +21,15 @@ PHRASES: dict[str, dict[str, str]] = {
     "stairs_down": {"en": "Stairs going down", "fr": "Escalier qui descend"},
     "curb": {"en": "Curb ahead", "fr": "Bordure devant"},
     "construction": {"en": "Construction ahead", "fr": "Travaux devant"},
+    "traffic_light": {"en": "Traffic light ahead", "fr": "Feu de circulation devant"},
     # system
     "unclear": {"en": "Unclear", "fr": "Incertain"},
     "nothing_detected": {"en": "Nothing detected", "fr": "Rien de détecté"},
     # voice commands
     "intro": {
-        "en": "SeeWalk is on. I'll warn you about things in your path. To ask me something, say SeeWalk, "
+        "en": "SeeWalk is on. I'll warn you about potholes, curbs and signs in your path. To ask me something, say SeeWalk, "
               "then: what's ahead, what am I holding, what's blocking my path, or read this.",
-        "fr": "SeeWalk est prêt. Je vous préviens des obstacles sur votre chemin. Pour me poser une question, "
+        "fr": "SeeWalk est prêt. Je vous préviens des nids-de-poule, bordures et panneaux sur votre chemin. Pour me poser une question, "
               "dites SeeWalk, puis : qu'y a-t-il devant, qu'est-ce que je tiens, qu'est-ce qui bloque mon chemin, ou lis ceci.",
     },
     "cross_refusal": {

@@ -1,45 +1,48 @@
 [
   {
     "photo": "bins_obstacle_in_path.jpg",
-    "ms": 2101,
+    "ms": 2423,
     "hazards": [
       {
         "type": "obstacle_in_path",
         "direction": "ahead",
-        "distance": "close",
+        "distance": "near",
         "urgency": 2,
-        "confidence": 0.99,
+        "confidence": 0.98,
         "approaching": false,
         "phrase": "Bins ahead"
       }
     ],
-    "unclear": false
+    "unclear": false,
+    "summary": "Large recycling bins on the walkway"
   },
   {
     "photo": "blurry_sign_closeup.jpg",
-    "ms": 1405,
+    "ms": 1566,
     "hazards": [],
-    "unclear": false
+    "unclear": false,
+    "summary": "Parking signs at night"
   },
   {
     "photo": "day_bike_rack_parked_bikes_sidewalk.jpg",
-    "ms": 1739,
+    "ms": 1456,
     "hazards": [
       {
         "type": "obstacle_in_path",
         "direction": "ahead",
         "distance": "close",
-        "urgency": 2,
+        "urgency": 1,
         "confidence": 0.95,
         "approaching": false,
         "phrase": "Bike rack ahead"
       }
     ],
-    "unclear": false
+    "unclear": false,
+    "summary": "Bikes in racks on a sidewalk"
   },
   {
     "photo": "day_closed_glass_door.jpg",
-    "ms": 1781,
+    "ms": 2041,
     "hazards": [
       {
         "type": "obstacle_in_path",
@@ -51,27 +54,38 @@
         "phrase": "Glass door ahead"
       }
     ],
-    "unclear": false
+    "unclear": false,
+    "summary": "Glass doors of an entrance"
   },
   {
     "photo": "day_door_button_post_glass_door.jpg",
-    "ms": 1767,
+    "ms": 1742,
     "hazards": [
       {
         "type": "obstacle_in_path",
         "direction": "ahead",
         "distance": "close",
-        "urgency": 2,
+        "urgency": 1,
         "confidence": 0.95,
         "approaching": false,
         "phrase": "Post ahead"
+      },
+      {
+        "type": "obstacle_in_path",
+        "direction": "ahead",
+        "distance": "near",
+        "urgency": 2,
+        "confidence": 0.9,
+        "approaching": false,
+        "phrase": "Glass door ahead"
       }
     ],
-    "unclear": false
+    "unclear": false,
+    "summary": "Metal post and glass doors"
   },
   {
     "photo": "day_exit_door_stairs_sign.jpg",
-    "ms": 1677,
+    "ms": 2103,
     "hazards": [
       {
         "type": "obstacle_in_path",
@@ -83,27 +97,12 @@
         "phrase": "Closed door ahead"
       }
     ],
-    "unclear": false
+    "unclear": false,
+    "summary": "Closed green door ahead"
   },
   {
     "photo": "day_indoor_pillar_sign_stairs_up.jpg",
-    "ms": 1390,
-    "hazards": [
-      {
-        "type": "obstacle_in_path",
-        "direction": "ahead",
-        "distance": "close",
-        "urgency": 1,
-        "confidence": 0.95,
-        "approaching": false,
-        "phrase": "Pillar ahead"
-      }
-    ],
-    "unclear": false
-  },
-  {
-    "photo": "day_parked_ebike_curb_street.jpg",
-    "ms": 2328,
+    "ms": 1654,
     "hazards": [
       {
         "type": "obstacle_in_path",
@@ -112,14 +111,32 @@
         "urgency": 1,
         "confidence": 0.99,
         "approaching": false,
-        "phrase": "Bike rack ahead"
+        "phrase": "Sign ahead"
       }
     ],
-    "unclear": false
+    "unclear": false,
+    "summary": "Large sign in hallway"
+  },
+  {
+    "photo": "day_parked_ebike_curb_street.jpg",
+    "ms": 1840,
+    "hazards": [
+      {
+        "type": "obstacle_in_path",
+        "direction": "ahead",
+        "distance": "close",
+        "urgency": 1,
+        "confidence": 0.95,
+        "approaching": false,
+        "phrase": "Bike in path ahead"
+      }
+    ],
+    "unclear": false,
+    "summary": "Bike and bike rack on sidewalk"
   },
   {
     "photo": "day_wall_water_fountains_protruding.jpg",
-    "ms": 1411,
+    "ms": 1738,
     "hazards": [
       {
         "type": "obstacle_in_path",
@@ -128,50 +145,54 @@
         "urgency": 2,
         "confidence": 0.95,
         "approaching": false,
-        "phrase": "Water fountain ahead"
+        "phrase": "Water fountains ahead"
       }
     ],
-    "unclear": false
+    "unclear": false,
+    "summary": "Water fountains on a green wall"
   },
   {
     "photo": "hydrant_cracked_sidewalk.jpg",
-    "ms": 1154,
+    "ms": 1740,
     "hazards": [],
-    "unclear": false
+    "unclear": false,
+    "summary": "Sidewalk at night"
   },
   {
     "photo": "indoor_menu_board.jpg",
-    "ms": 1656,
+    "ms": 1304,
     "hazards": [],
-    "unclear": false
+    "unclear": false,
+    "summary": "Large restaurant menu screen"
   },
   {
     "photo": "lamppost_sign_sidewalk.jpg",
-    "ms": 1242,
+    "ms": 1674,
     "hazards": [],
-    "unclear": false
+    "unclear": false,
+    "summary": "Walkway with streetlights and buildings at night"
   },
   {
     "photo": "stop_sign_crosswalk_1.jpg",
-    "ms": 1972,
+    "ms": 1743,
     "hazards": [
+      {
+        "type": "stop_sign",
+        "direction": "right",
+        "distance": "near",
+        "urgency": 3,
+        "confidence": 0.99,
+        "approaching": false,
+        "phrase": "Stop sign on right"
+      },
       {
         "type": "crosswalk",
         "direction": "ahead",
         "distance": "near",
         "urgency": 3,
-        "confidence": 0.9,
-        "approaching": false,
-        "phrase": "Crosswalk ahead"
-      },
-      {
-        "type": "stop_sign",
-        "direction": "ahead",
-        "distance": "near",
-        "urgency": 3,
         "confidence": 0.95,
         "approaching": false,
-        "phrase": "Stop sign ahead"
+        "phrase": "Crosswalk ahead"
       },
       {
         "type": "curb_or_dropoff",
@@ -183,11 +204,12 @@
         "phrase": "Curb ahead"
       }
     ],
-    "unclear": false
+    "unclear": false,
+    "summary": "Street, crosswalk, and stop sign"
   },
   {
     "photo": "stop_sign_crosswalk_2.jpg",
-    "ms": 1431,
+    "ms": 2284,
     "hazards": [
       {
         "type": "stop_sign",
@@ -197,14 +219,44 @@
         "confidence": 0.95,
         "approaching": false,
         "phrase": "Stop sign ahead"
+      },
+      {
+        "type": "crosswalk",
+        "direction": "ahead",
+        "distance": "close",
+        "urgency": 3,
+        "confidence": 0.95,
+        "approaching": false,
+        "phrase": "Crosswalk ahead"
       }
     ],
-    "unclear": false
+    "unclear": false,
+    "summary": "Sidewalk, street, and stop sign"
   },
   {
     "photo": "yield_sign_hydrant_crosswalk.jpg",
-    "ms": 1516,
-    "hazards": [],
-    "unclear": false
+    "ms": 2278,
+    "hazards": [
+      {
+        "type": "curb_or_dropoff",
+        "direction": "ahead",
+        "distance": "near",
+        "urgency": 1,
+        "confidence": 0.95,
+        "approaching": false,
+        "phrase": "Curb ahead"
+      },
+      {
+        "type": "crosswalk",
+        "direction": "ahead",
+        "distance": "near",
+        "urgency": 3,
+        "confidence": 0.9,
+        "approaching": false,
+        "phrase": "Crosswalk ahead"
+      }
+    ],
+    "unclear": false,
+    "summary": "Sidewalk edge and street at night"
   }
 ]

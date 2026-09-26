@@ -99,7 +99,7 @@ export const strings: Record<Lang, Record<string, string>> = {
     youCanSay: "You can say",
     listeningNow: "Listening…",
     thinking: "Thinking…",
-    autoLabel: "Automatic alerts (people, obstacles)",
+    autoLabel: "Street alerts (potholes, curbs, signs)",
     autoOn: "On",
     autoOff: "Off",
     cmdAhead: "“SeeWalk, what's ahead?”",
@@ -121,7 +121,7 @@ export const strings: Record<Lang, Record<string, string>> = {
     youCanSay: "Vous pouvez dire",
     listeningNow: "J'écoute…",
     thinking: "Je réfléchis…",
-    autoLabel: "Alertes automatiques (personnes, obstacles)",
+    autoLabel: "Alertes de rue (nids-de-poule, bordures, panneaux)",
     autoOn: "Oui",
     autoOff: "Non",
     cmdAhead: "«\u00a0SeeWalk, qu'y a-t-il devant\u00a0?\u00a0»",
@@ -299,6 +299,17 @@ const MIN_CONFIDENCE = 0.6;
 const REPEAT_MS: Record<Hazard["urgency"], number> = { 1: 5000, 2: 8000, 3: 20000 };
 const DISTANCE_RANK = { close: 0, near: 1, far: 2 } as const;
 const lastSpoken = new Map<string, number>();
+// Information is keyed by type only: walking past a stop sign turns "ahead" into "on your right",
+// and that shouldn't count as a new thing to announce.
+const repeatKey = (h: Hazard) => (h.urgency === 3 ? h.type : `${h.type}:${h.direction}`);
+
+/** Street alerts: what's announced without being asked. No people, chairs or other objects,
+ *  only the things a cane user can't find in time (holes, edges, signs, work zones). */
+export const STREET_TYPES: ReadonlySet<Hazard["type"]> = new Set<Hazard["type"]>([
+  "pothole", "uneven_surface", "curb_or_dropoff", "stairs_down", "construction",
+  "head_height_obstacle", "stop_sign", "crosswalk", "traffic_light",
+]);
+export const streetOnly = (r: SceneResult): SceneResult => ({ ...r, hazards: r.hazards.filter((h) => STREET_TYPES.has(h.type)) });
 
 /** Returns the one hazard worth saying now, or null to stay quiet.
  *  ignoreRepeat: the walker asked "What's ahead?", so say it even if we just said it. */
@@ -307,7 +318,7 @@ export function pickAlert(result: SceneResult, { ignoreRepeat = false } = {}): H
   const candidates = result.hazards.filter(
     (h) =>
       h.confidence >= MIN_CONFIDENCE &&
-      (ignoreRepeat || now - (lastSpoken.get(`${h.type}:${h.direction}`) ?? -Infinity) >= REPEAT_MS[h.urgency]),
+      (ignoreRepeat || now - (lastSpoken.get(repeatKey(h)) ?? -Infinity) >= REPEAT_MS[h.urgency]),
   );
   if (candidates.length === 0) return null;
   candidates.sort(
@@ -317,7 +328,7 @@ export function pickAlert(result: SceneResult, { ignoreRepeat = false } = {}): H
       DISTANCE_RANK[a.distance] - DISTANCE_RANK[b.distance],
   );
   const pick = candidates[0];
-  lastSpoken.set(`${pick.type}:${pick.direction}`, now);
+  lastSpoken.set(repeatKey(pick), now);
   return pick;
 }
 
@@ -327,7 +338,7 @@ export function fallbackClip(h: Hazard): string | null {
   const map: Partial<Record<Hazard["type"], string>> = {
     stop_sign: "stop_sign", crosswalk: "crosswalk", head_height_obstacle: "head_height",
     obstacle_in_path: "obstacle_path", construction: "construction", pothole: "pothole",
-    uneven_surface: "uneven", stairs_down: "stairs_down", curb_or_dropoff: "curb",
+    uneven_surface: "uneven", stairs_down: "stairs_down", curb_or_dropoff: "curb", traffic_light: "traffic_light",
   };
   return map[h.type] ?? null;
 }
@@ -343,7 +354,7 @@ Quick sanity test: call `pickAlert` twice with the same fake result within 5 s. 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { MOCK, tts } from "../api/client";
 import type { Hazard, Lang, ListenResult, SceneResult, SystemEvent } from "../api/types";
-import { fallbackClip, panFor, pickAlert } from "../alerts/pickAlert";
+import { fallbackClip, panFor, pickAlert, streetOnly } from "../alerts/pickAlert";
 import { audio } from "../audio/AudioEngine";
 import clips from "../audio/clips.json";
 import { captureFrame } from "../camera/captureFrame";
@@ -368,6 +379,9 @@ const levelOf = (h: Hazard): Shown["level"] => (h.urgency === 1 ? "urgent" : h.u
 const log = (kind: string, text: string) =>
   sendToLaptop({ at: new Date().toLocaleTimeString([], { hour12: false }), kind, text });
 
+// On-device person/bike/car warnings (the fast layer): off, street alerts only.
+const PEOPLE_ALERTS = false;
+
 // The spoken introduction (the voice commands) plays on the first Start on this phone only;
 // after that Start just says "Walk mode on". Storage can be unavailable: then it always plays.
 const INTRO_KEY = "seewalk.introPlayed";
@@ -379,10 +393,10 @@ export default function WalkMode() {
   const [walking, setWalking] = useState(false);
   const [shown, setShown] = useState<Shown | null>(null);
   const [status, setStatus] = useState<Status>("idle");
-  // Automatic announcements (Gemini hazards + the fast layer's people/bikes/cars) are OFF by default
-  // for now: in testing they flooded the screen. With them off, SeeWalk only speaks when asked
-  // ("SeeWalk, …"), plus the safety messages (no connection, camera blocked).
-  const [autoAlerts, setAutoAlerts] = useState(false);
+  // Street alerts: Gemini's potholes, curbs, stairs, work zones and signs are announced without
+  // being asked. People, chairs and other objects are not (in testing they flooded the screen);
+  // the walker asks for those ("SeeWalk, what's blocking my path?").
+  const [autoAlerts, setAutoAlerts] = useState(true);
   // Siri-style indicator: "listening" while a spoken clip is checked, "thinking" while an answer
   // is prepared. Blind users get the same information as sound (a chirp, then a soft pulse).
   const [busy, setBusy] = useState<"idle" | "listening" | "thinking">("idle");
@@ -432,7 +446,7 @@ export default function WalkMode() {
   const onResult = useCallback((r: SceneResult) => {
     if (!autoAlertsRef.current) return;          // voice-only mode: stay quiet unless asked
     if (answering.current > 0) return;           // never talk over an answer
-    const h = pickAlert(r);
+    const h = pickAlert(streetOnly(r));
     if (h) speak(h);
   }, [speak]);
 
@@ -450,7 +464,8 @@ export default function WalkMode() {
   const walkRef = useRef(walk);
   useLayoutEffect(() => { walkRef.current = walk; });
 
-  // Fast layer (Abdul): on-device person/bike/car warnings into the same onResult.
+  // Fast layer (Abdul): on-device person/bike/car warnings into the same onResult. Switched off
+  // with street alerts (it only announces people and vehicles); flip PEOPLE_ALERTS to bring it back.
   // The model is downloaded as soon as this screen opens (it took ~19 s cold).
   const langRef = useRef(lang);
   const onResultRef = useRef(onResult);
@@ -458,9 +473,11 @@ export default function WalkMode() {
   const fastStop = useRef<(() => void) | null>(null);
   const fastGen = useRef(0);
   useEffect(() => {
+    if (!PEOPLE_ALERTS) return;
     void import("../detection/fastLayer").then((m) => m.preloadFastLayer()).catch(() => {});
   }, []);
   async function startFast(gen: number) {
+    if (!PEOPLE_ALERTS) return;
     const video = videoRef.current;
     for (let i = 0; i < 100 && video && !video.videoWidth; i++) await new Promise((r) => setTimeout(r, 100));
     if (!video || fastGen.current !== gen) return;
@@ -724,7 +741,7 @@ Built in `web/src/styles/walk.css`. Colours come from the white cane: near-black
 - **Setup screen:** tagline + 3 wearing steps (EN/FR), one big white **Start walk** button
 - **Walking:** status dot, **the camera fills most of the screen**, **alert panel** with a direction arrow (← ↑ →) and an urgency colour bar (long "read this" answers switch to smaller text and scroll inside the panel), a small white **What's ahead?** and a red outlined **Stop** side by side
 - **Working indicator (like Siri):** when speech is picked up, a soft two-note **"got it" chirp** and a **"Listening…"** pill with white waveform bars over the camera; while an answer is prepared, a quiet **"working" pulse** every 0.8 s and a **"Thinking…"** pill with red bars. The pulse stops the moment the answer plays. (The chirp can also fire for nearby talk, since the phone only knows it was "SeeWalk, …" after Gemini checks; the pulse only plays for real questions.)
-- **Automatic alerts are OFF by default** (setting on the setup screen): in testing the fast layer + Gemini hazards flooded the screen, so for now SeeWalk only speaks when asked ("SeeWalk, …") plus the safety messages. Turn it on to bring back automatic warnings
+- **Street alerts are ON by default** (setting on the setup screen): only potholes, uneven pavement, curbs, stairs down, construction, head-height obstacles, stop signs, crosswalks and traffic lights are announced without being asked (`streetOnly` in pickAlert.ts). People, chairs and other objects are not (in testing they flooded the screen); the walker asks for those ("SeeWalk, what's blocking my path?"). The fast layer (people/bikes/cars) is off (`PEOPLE_ALERTS` in WalkMode.tsx). Signs and crosswalks are repeated at most every 20 s, whatever their direction.
 - Caption text is 26–36 px bold: that's what viewers read in the video
 
 ### Step 7: Build without the backend

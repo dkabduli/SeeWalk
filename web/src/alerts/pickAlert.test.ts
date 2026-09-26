@@ -53,9 +53,9 @@ describe("pickAlert", () => {
     expect(mod.pickAlert(scene(hz({ urgency: 3 })))).not.toBeNull();
   });
 
-  it("same hazard in a new direction is new", () => {
-    mod.pickAlert(scene(hz({ type: "person", direction: "left" })));
-    expect(mod.pickAlert(scene(hz({ type: "person", direction: "right" })))).not.toBeNull();
+  it("a hazard (not information) in a new direction is new", () => {
+    mod.pickAlert(scene(hz({ type: "person", direction: "left", urgency: 2 })));
+    expect(mod.pickAlert(scene(hz({ type: "person", direction: "right", urgency: 2 })))).not.toBeNull();
   });
 
   it("'What's ahead?' (ignoreRepeat) answers even if just said, without muting it later", () => {
@@ -74,5 +74,21 @@ describe("pickAlert", () => {
 
   it("pans left / centre / right", () => {
     expect([mod.panFor(hz({ direction: "left" })), mod.panFor(hz({})), mod.panFor(hz({ direction: "right" }))]).toEqual([-1, 0, 1]);
+  });
+
+  it("information isn't repeated just because its direction changed while walking past", () => {
+    expect(mod.pickAlert(scene(hz({ direction: "ahead" })))).not.toBeNull();
+    vi.setSystemTime(3000);
+    expect(mod.pickAlert(scene(hz({ direction: "right", phrase: "Stop sign on your right" })))).toBeNull();
+  });
+});
+
+describe("streetOnly", () => {
+  it("keeps street hazards and drops people, vehicles and objects", () => {
+    const r = mod.streetOnly(scene(
+      hz({ type: "person", urgency: 2 }), hz({ type: "car" }), hz({ type: "obstacle_in_path", urgency: 2 }),
+      hz({ type: "other" }), hz({ type: "pothole", urgency: 1 }), hz({ type: "stop_sign" }), hz({ type: "curb_or_dropoff" }),
+    ));
+    expect(r.hazards.map((h) => h.type)).toEqual(["pothole", "stop_sign", "curb_or_dropoff"]);
   });
 });

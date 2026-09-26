@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 HazardType = Literal[
     "person", "bike", "car", "crosswalk", "stop_sign", "pothole", "uneven_surface",
     "head_height_obstacle", "obstacle_in_path", "construction", "curb_or_dropoff",
-    "stairs_down", "other",
+    "stairs_down", "traffic_light", "other",
 ]
 
 
