@@ -18,6 +18,12 @@ flowchart LR
     D -- voice --> E["🎧 Headphones<br/><small>walker hears it</small>"]
 ```
 
+### How the pieces talk (Gemini, ElevenLabs, Tiger Data)
+
+![How SeeWalk works: the phone sends snapshots to the server, Gemini returns hazards, the phone plays River's pre-recorded ElevenLabs clip; questions go through Gemini and ElevenLabs Flash live; Tiger Data hazard map planned](docs/img/how-it-works.svg)
+
+Regenerate after changing the flow: `python3 docs/img/make_how_it_works.py`. **Tiger Data is not set up yet** (planned hazard map, shown greyed out).
+
 ### 3D model
 
 [![SeeWalk signal path in 3D: Camera → Gemini → SeeWalk → ElevenLabs → Headphones](docs/img/signal-path-3d.png)](https://raw.githack.com/dkabduli/SeeWalk/main/docs/signal-path-3d.html)
