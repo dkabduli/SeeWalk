@@ -20,8 +20,9 @@ app.add_middleware(
 )
 
 client = genai.Client(
-    api_key=os.environ["GEMINI_API_KEY"]
+    api_key=os.environ["GEMINI_API_KEY"],
 )
+
 @app.get("/")
 def home():
     return {"message": "Server is running"}
@@ -32,7 +33,7 @@ async def detect(data: dict):
     image_bytes = base64.b64decode(image_data)
 
     response = client.models.generate_content(
-        model="gemini-3.8-flash",
+        model=os.environ["GEMINI_MODEL"],
         contents=[
             {
                 "inline_data": {
