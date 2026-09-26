@@ -185,7 +185,7 @@ Silence must never mean "all clear" by accident.
 | **cloudflared / ngrok** | HTTPS tunnel so the iPhone can use the camera during dev | — | ⬜ |
 | **Vultr + Caddy** | Hosting with automatic HTTPS | — | stretch |
 | **GoDaddy Registry domain** | Public URL for the demo | — | stretch |
-| **TensorFlow.js + COCO-SSD** | On-device fast layer for people/bikes/cars (~0.2 s) | `web/src/detection/` | stretch |
+| **TensorFlow.js + COCO-SSD** | On-device fast layer for people/bikes/cars (~25–30 ms per check) | `web/src/detection/` | ✅ built, preloaded |
 | **Tiger Data** + **Leaflet** | Hazard map (civic layer) | `server/db.py`, `web/src/pages/Map.tsx` | stretch |
 | **GitHub** | Repo, one branch per person, PRs into `main` | — | ✅ |
 
@@ -221,7 +221,7 @@ Turn the live iPhone camera into a steady stream of snapshots and report when th
 - [ ] `types.ts` + `client.ts` pushed early; a mock API for testing without the backend
 - [ ] `captureFrame` (768 px JPEG + brightness), `useCamera` (portrait, lanyard), `useWalkLoop` (one request in flight, 5 s timeout, previous frame included, `checkNow()` for "What's ahead?")
 - [ ] Hands-free **"SeeWalk, what's ahead?" voice command** (our own mic capture → `POST /listen` → Gemini); tested with Bluetooth headphones
-- [ ] Stretch: COCO-SSD fast layer
+- [x] Stretch: COCO-SSD fast layer (on-device person/bike/car, ~25–30 ms/check, approach tracking)
 - [ ] `no_connection` / `connection_back` / `camera_blocked` events; screen stays awake
 - [ ] Also: share keys privately, **enable Gemini billing before filming**, merge PRs
 

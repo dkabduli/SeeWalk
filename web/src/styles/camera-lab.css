@@ -24,6 +24,7 @@
 .lab .log li { padding: 2px 0; border-bottom: 1px solid #1c1c1c; }
 .lab .log li span { color: #777; }
 .lab .log .result { color: #9fd1ff; }
+.lab .log .fast { color: #ff8cf0; font-weight: 700; }
 .lab .log .system { color: #ffb347; font-weight: 700; }
 .lab .log .ask { color: #b8ff9f; }
 .lab .log .voice, .lab .log .info { color: #aaa; }

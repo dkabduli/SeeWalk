@@ -780,66 +780,225 @@ If 3 or 4 fails badly, **ship tap-anywhere only** and tell Jibril to hide the vo
 | Screen locks mid-walk | Safari freezes the page: no snapshots and **no voice** (nothing can warn the walker). Wake lock prevents most of it; for filming also set Settings → Display → Auto-Lock → Never |
 | Two Start taps in a row | Handled by the generation check; if you ever see two requests in flight, that's the bug |
 
-## 9. Stretch: COCO-SSD fast layer (only after "Done when" is all ✅)
+## 9. Stretch: COCO-SSD fast layer ✅ built
 
-Gemini takes ~1.5 s. A bike covers ~8 m in that time. COCO-SSD runs **on the phone** and spots people, bikes and cars in ~0.1–0.2 s.
+Gemini takes ~1.5 s. A bike covers ~8 m in that time. COCO-SSD runs **on the phone** and spots people, bikes and cars in ~25–30 ms per check (4 checks a second).
 
-1. Install:
-   ```bash
-   cd web && npm install @tensorflow/tfjs @tensorflow-models/coco-ssd
-   ```
-2. `web/src/detection/fastLayer.ts`:
-   ```ts
-   import "@tensorflow/tfjs";
-   import * as cocoSsd from "@tensorflow-models/coco-ssd";
-   import clips from "../audio/clips.json";
-   import type { Hazard, Lang, SceneResult } from "../api/types";
+**Verified:** 10 tracker tests (mutation-checked); headless Chrome with a fake camera feed of a bike getting closer → "Bike ahead ↗" (approaching), urgency 1 once close, 24–31 ms per check. The model took ~19 s to load cold, so **it's preloaded when the screen opens**; with preloading, Start waited 0.0 s and the first warning came ~1.5 s after Start.
 
-   const CLASS_TO_TYPE: Record<string, "person" | "bike" | "car"> = {
-     person: "person", bicycle: "bike", motorcycle: "bike", car: "car", truck: "car", bus: "car",
-   };
+### How it works
+1. `FastTracker` (pure logic, `web/src/detection/tracker.ts`) follows each person/bike/car between checks by box overlap, per type.
+2. **Approaching** = its box grew ≥ 20 % over ~0.6 s. **Close** = box taller than 60 % of the frame.
+3. It only reports things that are **approaching or close** (urgency 1 if both), with a direction from the box centre (thirds).
+4. Phrases are **exactly the bundled clip text** ("Bike on your left"), so Jibril's `speak()` plays the clip instantly instead of calling `/tts`.
+5. `fastLayer.ts` loads TensorFlow.js + COCO-SSD (`lite_mobilenet_v2`) with a dynamic import (a separate ~276 KB gzipped download, so other pages don't pay for it), runs every 250 ms on the camera video, skips while the page is hidden, and survives a failed detection.
 
-   export async function startFastLayer(
-     video: HTMLVideoElement,
-     getLang: () => Lang,
-     onResult: (r: SceneResult) => void,
-   ) {
-     const model = await cocoSsd.load({ base: "lite_mobilenet_v2" }); // small, fast
-     const lastArea = new Map<string, number>();
-     let running = true;
+### Wiring (Jibril's WalkMode)
+```ts
+// when the walk screen opens (downloads the model in the background):
+useEffect(() => { void import("../detection/fastLayer").then((m) => m.preloadFastLayer()); }, []);
+// after walk.start(), once the video is playing:
+const { startFastLayer } = await import("../detection/fastLayer");
+const stopFast = await startFastLayer(videoRef.current!, () => langRef.current, onResult);
+// on Stop: stopFast();
+```
+Its results go into the **same `onResult`** as Gemini's; `pickAlert` dedupes and ranks them together.
 
-     async function tick() {
-       if (!running) return;
-       const preds = await model.detect(video, 5, 0.6);
-       const hazards: Hazard[] = [];
-       for (const p of preds) {
-         const type = CLASS_TO_TYPE[p.class];
-         if (!type) continue;
-         const [x, , w, h] = p.bbox;
-         const cx = (x + w / 2) / video.videoWidth;
-         const direction = cx < 1 / 3 ? "left" : cx > 2 / 3 ? "right" : "ahead";
-         const heightRatio = h / video.videoHeight;
-         const distance = heightRatio > 0.6 ? "close" : heightRatio > 0.3 ? "near" : "far";
-         const key = `${type}_${direction}`;
-         const area = w * h;
-         const approaching = area > (lastArea.get(key) ?? Infinity) * 1.15; // grew >15% since last tick
-         lastArea.set(key, area);
-         if (!approaching && distance !== "close") continue; // only what's coming at you or right there
-         hazards.push({
-           type, direction, distance, approaching,
-           urgency: distance === "close" && approaching ? 1 : 2,
-           confidence: p.score,
-           phrase: (clips as Record<string, Record<Lang, string>>)[key][getLang()],
-         });
-       }
-       if (hazards.length) onResult({ hazards, unclear: false });
-       setTimeout(tick, 250); // ~4 checks per second
-     }
-     tick();
-     return () => { running = false; };
-   }
-   ```
-3. Start it after the camera starts (same `video` element), stop it on Stop (call the function `startFastLayer` resolves to), and feed Jibril's `onResult`. His `pickAlert` already dedupes and ranks it alongside Gemini's results, and because these phrases **exactly match the bundled clips**, his `speak` plays the clip instantly instead of calling `/tts`.
-4. Test on the iPhone: first load downloads the model (a few MB), then watch for heat and battery drain. If it's too slow, raise the tick to 500 ms.
+### `web/src/detection/tracker.ts`
+
+```ts
+import clips from "../audio/clips.json";
+import type { Hazard, Lang } from "../api/types";
+
+// Pure logic for the fast layer: turns COCO-SSD boxes into hazards. No TensorFlow here,
+// so every rule is unit-tested without a camera or a model.
+
+export type FastType = "person" | "bike" | "car";
+
+/** COCO-SSD class → our hazard type. Everything else (chairs, dogs, ...) is Gemini's job. */
+export const CLASS_TO_TYPE: Record<string, FastType> = {
+  person: "person",
+  bicycle: "bike",
+  motorcycle: "bike",
+  car: "car",
+  truck: "car",
+  bus: "car",
+};
+
+export interface Detection {
+  type: FastType;
+  box: [number, number, number, number]; // x, y, width, height in video pixels
+  score: number;
+}
+
+interface Track {
+  id: number;
+  type: FastType;
+  box: Detection["box"];
+  seen: { t: number; area: number }[]; // recent sizes, to tell if it's getting closer
+  lastSeen: number;
+}
+
+const MATCH_IOU = 0.25;        // same object if the boxes overlap this much between checks
+const FORGET_MS = 1000;        // drop objects not seen for this long
+const APPROACH_WINDOW_MS = 600; // compare size now vs ~0.6 s ago
+const APPROACH_GROWTH = 1.2;    // 20 % bigger in that time = coming toward the walker
+const CLOSE_HEIGHT = 0.6;       // box taller than 60 % of the frame = close
+const NEAR_HEIGHT = 0.3;
+
+function iou(a: Detection["box"], b: Detection["box"]): number {
+  const x1 = Math.max(a[0], b[0]);
+  const y1 = Math.max(a[1], b[1]);
+  const x2 = Math.min(a[0] + a[2], b[0] + b[2]);
+  const y2 = Math.min(a[1] + a[3], b[1] + b[3]);
+  const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+  const union = a[2] * a[3] + b[2] * b[3] - inter;
+  return union > 0 ? inter / union : 0;
+}
+
+/** Follows each person/bike/car from one check to the next and reports the ones that matter. */
+export class FastTracker {
+  private tracks: Track[] = [];
+  private nextId = 1;
+
+  /** One detection pass → hazards worth announcing (approaching or close). */
+  update(dets: Detection[], frameW: number, frameH: number, t: number, lang: Lang): Hazard[] {
+    const unmatched = new Set(this.tracks);
+    const hazards: Hazard[] = [];
+
+    for (const d of [...dets].sort((a, b) => b.score - a.score)) {
+      let best: Track | null = null;
+      let bestIou = MATCH_IOU;
+      for (const tr of unmatched) {
+        if (tr.type !== d.type) continue;
+        const o = iou(tr.box, d.box);
+        if (o > bestIou) { best = tr; bestIou = o; }
+      }
+      const area = d.box[2] * d.box[3];
+      let track: Track;
+      if (best) {
+        unmatched.delete(best);
+        track = best;
+        track.box = d.box;
+        track.lastSeen = t;
+        track.seen.push({ t, area });
+        track.seen = track.seen.filter((s) => t - s.t <= APPROACH_WINDOW_MS * 2);
+      } else {
+        track = { id: this.nextId++, type: d.type, box: d.box, seen: [{ t, area }], lastSeen: t };
+        this.tracks.push(track);
+      }
+
+      const past = track.seen.find((s) => t - s.t >= APPROACH_WINDOW_MS);
+      const approaching = !!past && area >= past.area * APPROACH_GROWTH;
+      const heightRatio = d.box[3] / frameH;
+      const distance = heightRatio > CLOSE_HEIGHT ? "close" : heightRatio > NEAR_HEIGHT ? "near" : "far";
+      if (!approaching && distance !== "close") continue; // only what's coming at you, or right there
+
+      const cx = (d.box[0] + d.box[2] / 2) / frameW;
+      const direction = cx < 1 / 3 ? "left" : cx > 2 / 3 ? "right" : "ahead";
+      const key = `${d.type}_${direction}`;
+      hazards.push({
+        type: d.type,
+        direction,
+        distance,
+        approaching,
+        urgency: approaching && distance === "close" ? 1 : 2,
+        confidence: d.score,
+        // Exactly the bundled clip's text, so Jibril's speak() plays the clip instantly (no /tts)
+        phrase: (clips as Record<string, Record<Lang, string>>)[key][lang],
+      });
+    }
+
+    this.tracks = this.tracks.filter((tr) => t - tr.lastSeen <= FORGET_MS);
+    return hazards;
+  }
+
+  reset() {
+    this.tracks = [];
+  }
+}
+```
+
+### `web/src/detection/fastLayer.ts`
+
+```ts
+import "@tensorflow/tfjs";
+import * as cocoSsd from "@tensorflow-models/coco-ssd";
+import type { Lang, SceneResult } from "../api/types";
+import { CLASS_TO_TYPE, FastTracker, type Detection } from "./tracker";
+
+// Fast layer: COCO-SSD on the phone spots people, bikes and cars ~4 times a second (~0.1–0.3 s),
+// long before Gemini's ~1.5 s answer. Results go into the same onResult as Gemini's.
+// Load with a dynamic import so TensorFlow.js (~1 MB) is only downloaded when it's used:
+//   const { startFastLayer } = await import("../detection/fastLayer");
+
+const TICK_MS = 250;
+
+// The model download + GPU warm-up took ~19 s on first load in testing, so start it early:
+// call preloadFastLayer() when the walk screen opens, and Start finds the model ready.
+let modelPromise: Promise<cocoSsd.ObjectDetection> | null = null;
+export function preloadFastLayer(): Promise<cocoSsd.ObjectDetection> {
+  if (!modelPromise) {
+    const t0 = performance.now();
+    modelPromise = cocoSsd.load({ base: "lite_mobilenet_v2" }).then((m) => {
+      console.info(`fast layer: model ready in ${Math.round(performance.now() - t0)} ms`);
+      return m;
+    });
+    modelPromise.catch(() => { modelPromise = null; }); // allow a retry after a failed download
+  }
+  return modelPromise;
+}
+
+export interface FastLayerStats {
+  loadMs: number;       // how long Start waited for the model (0 if it was preloaded)
+  lastDetectMs: number; // time for the latest detection pass
+}
+
+/** Starts detecting on the (already playing) camera video. Resolves to a stop function. */
+export async function startFastLayer(
+  video: HTMLVideoElement,
+  getLang: () => Lang,
+  onResult: (r: SceneResult) => void,
+  onStats?: (s: FastLayerStats) => void,
+): Promise<() => void> {
+  const t0 = performance.now();
+  const model = await preloadFastLayer();
+  // loadMs = how long Start actually waited (0 if preloaded in time)
+  const stats: FastLayerStats = { loadMs: Math.round(performance.now() - t0), lastDetectMs: 0 };
+  const tracker = new FastTracker();
+  let running = true;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  async function tick() {
+    if (!running) return;
+    if (video.videoWidth && video.readyState >= 2 && !document.hidden) {
+      try {
+        const t = performance.now();
+        const preds = await model.detect(video, 6, 0.5);
+        stats.lastDetectMs = Math.round(performance.now() - t);
+        onStats?.(stats);
+        const dets: Detection[] = [];
+        for (const p of preds) {
+          const type = CLASS_TO_TYPE[p.class];
+          if (type) dets.push({ type, box: p.bbox, score: p.score });
+        }
+        const hazards = tracker.update(dets, video.videoWidth, video.videoHeight, t, getLang());
+        if (running && hazards.length) onResult({ hazards, unclear: false });
+      } catch (e) {
+        console.warn("fast layer: detection failed, will retry", e); // one bad frame must not stop it
+      }
+    }
+    if (running) timer = setTimeout(tick, TICK_MS);
+  }
+  onStats?.(stats);
+  void tick();
+
+  return () => {
+    running = false;
+    clearTimeout(timer);
+    tracker.reset(); // keep the model loaded for the next Start
+  };
+}
+```
 
 For the video: a teammate walking quickly toward the camera shows off the fast layer ("Person ahead" before Gemini would have answered).

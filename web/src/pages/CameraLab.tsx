@@ -10,7 +10,7 @@ import "../styles/camera-lab.css";
  *  Not the real UI (that's Jibril's WalkMode); it shows everything the loop does so it can be
  *  tested on the iPhone before the rest exists. */
 
-interface LogLine { at: string; kind: "result" | "system" | "ask" | "voice" | "info"; text: string }
+interface LogLine { at: string; kind: "result" | "fast" | "system" | "ask" | "voice" | "info"; text: string }
 
 const time = () => new Date().toLocaleTimeString([], { hour12: false });
 
@@ -90,8 +90,54 @@ export default function CameraLab() {
       (msg) => add("voice", msg),
     ));
 
+  // Fast layer (COCO-SSD on the phone). Loaded on demand so other pages don't download TensorFlow.
+  const [fastInfo, setFastInfo] = useState("off");
+  const fastStop = useRef<(() => void) | null>(null);
+  const fastGen = useRef(0);
+  const langRef = useRef(lang);
+  useLayoutEffect(() => { langRef.current = lang; });
+  const lastFast = useRef({ text: "", at: 0 });
+
+  // Start downloading the fast-layer model as soon as the lab opens (it took ~19 s cold)
+  useEffect(() => {
+    void import("../detection/fastLayer").then((m) => m.preloadFastLayer()).catch(() => {});
+  }, []);
+
+  const startFast = async (gen: number) => {
+    setFastInfo("loading model…");
+    const video = videoRef.current;
+    for (let i = 0; i < 100 && video && !video.videoWidth; i++) await new Promise((r) => setTimeout(r, 100));
+    if (!video || fastGen.current !== gen) return;
+    try {
+      const { startFastLayer } = await import("../detection/fastLayer");
+      const stop = await startFastLayer(
+        video,
+        () => langRef.current,
+        (r) => {
+          const text = describe(r);
+          const now = performance.now();
+          if (text !== lastFast.current.text || now - lastFast.current.at > 1500) { // don't flood the log
+            lastFast.current = { text, at: now };
+            add("fast", text);
+          }
+        },
+        (st) => setFastInfo(`${st.lastDetectMs || "…"} ms/check, waited ${(st.loadMs / 1000).toFixed(1)} s for model`),
+      );
+      if (fastGen.current !== gen) { stop(); return; } // stopped while the model was loading
+      fastStop.current = stop;
+      add("info", "fast layer running");
+    } catch (e) {
+      setFastInfo("failed");
+      add("info", `fast layer failed: ${(e as Error).message}`);
+    }
+  };
+
   function toggle() {
     if (walking) {
+      fastGen.current++;
+      fastStop.current?.();
+      fastStop.current = null;
+      setFastInfo("off");
       walk.stop();
       getVoice().stop();
       setVoiceOn(false);
@@ -104,6 +150,7 @@ export default function CameraLab() {
     if (getVoice().supported) setVoiceOn(getVoice().start(lang));
     else add("voice", "speech recognition not supported in this browser");
     void walk.start();
+    void startFast(++fastGen.current);
     lastResultAt.current = null;
     setWalking(true);
     add("info", `started (${lang}, interval ${import.meta.env.VITE_FRAME_INTERVAL_MS || 1500} ms${MOCK ? ", MOCK" : ""})`);
@@ -150,6 +197,7 @@ export default function CameraLab() {
           ? <>lens: brightness <b>{meter.b}</b> · contrast <b>{meter.c}</b> · {meter.covered ? <b className="bad">COVERED</b> : "ok"}</>
           : "lens meter starts with the walk"}
         {" · "}voice: {voiceOn ? "listening" : "off"}
+        {" · "}fast: {fastInfo}
       </p>
 
       <ol className="log" aria-live="polite">

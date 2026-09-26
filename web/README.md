@@ -2,14 +2,14 @@
 
 The phone app (React + Vite + TypeScript). Owners: `src/api/` + `src/camera/` Abdul ([PRD](../docs/prd/abdul-camera-capture.md), code identical to the PRD); `src/pages/`, `src/audio/`, `src/alerts/`, `src/i18n/` Jibril ([PRD](../docs/prd/jibril-ui-audio.md)).
 
-**`App.tsx` shows Aroha's page. The camera debug page (`pages/CameraLab.tsx`) opens at `…/?lab`.** It shows the live camera, every `SceneResult` with the time since the last one, system events (`no_connection`, `camera_blocked`, …), a **lens meter** (brightness/contrast, for tuning "lens covered"), the voice command (needs the server: `cd server && .venv/bin/uvicorn listen_app:app --port 8000`), and a big **What's ahead?** zone.
+**`App.tsx` shows Aroha's page. The camera debug page (`pages/CameraLab.tsx`) opens at `…/?lab`.** It shows the live camera, every `SceneResult` with the time since the last one, system events (`no_connection`, `camera_blocked`, …), a **lens meter** (brightness/contrast, for tuning "lens covered"), the voice command (needs the server: `cd server && .venv/bin/uvicorn listen_app:app --port 8000`), and a big **What's ahead?** zone, and the **COCO-SSD fast layer** (pink lines; model preloads when the page opens).
 
 ## Run
 
 ```bash
 cd web
 npm install
-npm test                 # 40 behaviour tests (loop, voice command, covered-lens check)
+npm test                 # 50 behaviour tests (loop, voice command, covered-lens check, fast-layer tracker)
 npm run build            # type-check + production build
 npx oxlint               # lint
 npm run dev              # http://localhost:5173
