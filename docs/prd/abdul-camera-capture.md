@@ -214,12 +214,13 @@ A 768 px JPEG at q0.7 is ~50–70 KB (same as the files in `samples/`), quick to
 ### Step 5: `web/src/camera/useCamera.ts`
 
 ```ts
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 
 export function useCamera(onEnded: () => void) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const onEndedRef = useRef(onEnded); onEndedRef.current = onEnded;
+  const onEndedRef = useRef(onEnded);
+  useLayoutEffect(() => { onEndedRef.current = onEnded; });
 
   const stop = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop()); // page-initiated stop never fires "ended"
@@ -259,7 +260,7 @@ Why `mute` isn't treated as "blocked" straight away: iOS mutes the track briefly
 ### Step 6: `web/src/camera/useWalkLoop.ts` (the heart of your piece)
 
 ```ts
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { analyze } from "../api/client";
 import type { Lang, SceneResult, SystemEvent } from "../api/types";
 import { captureFrame, looksCovered } from "./captureFrame";
@@ -283,10 +284,15 @@ interface Options {
 }
 
 export function useWalkLoop({ lang, onResult, onSystem }: Options) {
-  // refs so the running loop always sees the latest props
-  const langRef = useRef(lang); langRef.current = lang;
-  const onResultRef = useRef(onResult); onResultRef.current = onResult;
-  const onSystemRef = useRef(onSystem); onSystemRef.current = onSystem;
+  // refs so the running loop always sees the latest props (updated after each render)
+  const langRef = useRef(lang);
+  const onResultRef = useRef(onResult);
+  const onSystemRef = useRef(onSystem);
+  useLayoutEffect(() => {
+    langRef.current = lang;
+    onResultRef.current = onResult;
+    onSystemRef.current = onSystem;
+  });
 
   const camera = useCamera(useCallback(() => onSystemRef.current("camera_blocked"), []));
   const generation = useRef(0); // bumps on every start/stop, so an old loop can never keep running
@@ -506,10 +512,11 @@ export function createVoiceCommand(onCommand: () => void) {
 
 How Jibril wires it (in `WalkMode`):
 ```ts
-const voice = useMemo(() => createVoiceCommand(() => whatsAheadRef.current()), []);
-// FIRST lines of the Start tap, before any await:  const unlocking = audio.unlock(); voice.start(lang);
-// on Stop:                                          voice.stop();
-// on language switch while walking:                 voice.start(next);
+const voiceRef = useRef<ReturnType<typeof createVoiceCommand> | null>(null);
+const getVoice = () => (voiceRef.current ??= createVoiceCommand(() => whatsAheadRef.current()));
+// FIRST lines of the Start tap, before any await:  const unlocking = audio.unlock(); getVoice().start(lang);
+// on Stop:                                          getVoice().stop();
+// on language switch while walking:                 getVoice().start(next);
 ```
 
 **This is the riskiest piece. Test it on the iPhone early (Saturday morning), before building on it.** Check:
@@ -546,7 +553,7 @@ If 3 or 4 fails badly, **ship tap-anywhere only** and tell Jibril to hide the vo
 | `.videoRef` | on `<video playsInline muted autoPlay>` |
 | `.start()` / `.stop()` | Start / Stop taps. `start()` runs until Stop, so **don't `await` it**. It reports its own failures via `onSystem` |
 | `.checkNow()` | "What's ahead?": resolves with `{ ok: true, result }` or `{ ok: false, reason: "no_connection" \| "camera_blocked" \| "stopped" }` |
-| `createVoiceCommand(cb)` | `.start(lang)`, `.stop()`, `.supported` |
+| `createVoiceCommand(cb)` | `.start(lang)`, `.stop()`, `.supported`; create it lazily in a handler (see the wiring above) |
 | `analyze()`, `tts()`, types | from `web/src/api/` |
 
 ## 7. Done when

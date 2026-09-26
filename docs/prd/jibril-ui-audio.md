@@ -241,7 +241,7 @@ Quick sanity test: call `pickAlert` twice with the same fake result within 5 s. 
 ### Step 5: `web/src/pages/WalkMode.tsx` (the screen)
 
 ```tsx
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { tts } from "../api/client";
 import type { Hazard, Lang, SceneResult, SystemEvent } from "../api/types";
 import { audio } from "../audio/AudioEngine";
@@ -310,15 +310,17 @@ export default function WalkMode() {
   }, [lang]);
 
   const walk = useWalkLoop({ lang, onResult, onSystem });
+  const { videoRef } = walk;
 
   // Voice command "What's ahead?" (Abdul's code). The ref keeps the latest whatsAhead.
   const whatsAheadRef = useRef<() => void>(() => {});
-  const voice = useMemo(() => createVoiceCommand(() => whatsAheadRef.current()), []);
+  const voiceRef = useRef<ReturnType<typeof createVoiceCommand> | null>(null);
+  const getVoice = () => (voiceRef.current ??= createVoiceCommand(() => whatsAheadRef.current()));
 
   async function toggle() {
     if (walking) {
       walk.stop();
-      voice.stop();
+      getVoice().stop();
       setWalking(false);
       setStatus("idle");
       await audio.playClip(lang, "walk_stopped");
@@ -326,7 +328,7 @@ export default function WalkMode() {
     }
     // iOS only allows audio and the mic to start *inside* the tap: do these before any await
     const unlocking = audio.unlock();
-    voice.start(lang);                           // mic permission prompt on first use
+    getVoice().start(lang);                      // mic permission prompt on first use
     walk.start();                                // runs until Stop, don't await; camera prompt on first use
     setWalking(true);
     setStatus("walking");
@@ -363,20 +365,20 @@ export default function WalkMode() {
       await audio.playClip(lang, "nothing_detected");
     }
   }
-  whatsAheadRef.current = whatsAhead;
+  useLayoutEffect(() => { whatsAheadRef.current = whatsAhead; });
 
   async function switchLang() {
     const next = lang === "en" ? "fr" : "en";
     setLang(next);
     if (walking) {
-      voice.start(next);                         // listen in the new language
+      getVoice().start(next);                    // listen in the new language
       await audio.preload(next);
     }
   }
 
   return (
     <main className="walk">
-      <video ref={walk.videoRef} playsInline muted autoPlay className="preview" aria-hidden="true" />
+      <video ref={videoRef} playsInline muted autoPlay className="preview" aria-hidden="true" />
       {MOCK && <p className="mock-badge">MOCK DATA</p>}
       <p className="status" role="status">{t[status]}</p>
       <p className="caption" aria-live="polite">{caption}</p>

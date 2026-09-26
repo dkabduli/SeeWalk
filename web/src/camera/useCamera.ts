@@ -1,9 +1,10 @@
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 
 export function useCamera(onEnded: () => void) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const onEndedRef = useRef(onEnded); onEndedRef.current = onEnded;
+  const onEndedRef = useRef(onEnded);
+  useLayoutEffect(() => { onEndedRef.current = onEnded; });
 
   const stop = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop()); // page-initiated stop never fires "ended"

@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MOCK } from "./api/client";
-import type { Lang, SceneResult, SystemEvent } from "./api/types";
-import { captureFrame, looksCovered } from "./camera/captureFrame";
-import { createVoiceCommand } from "./camera/voiceCommand";
-import { useWalkLoop } from "./camera/useWalkLoop";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { MOCK } from "../api/client";
+import type { Lang, SceneResult, SystemEvent } from "../api/types";
+import { captureFrame, looksCovered } from "../camera/captureFrame";
+import { createVoiceCommand } from "../camera/voiceCommand";
+import { useWalkLoop } from "../camera/useWalkLoop";
 
 /** Camera lab: a debug page for Abdul's piece (camera, snapshot loop, events, voice command).
  *  Not the real UI (that's Jibril's WalkMode); it shows everything the loop does so it can be
@@ -21,7 +21,7 @@ function describe(r: SceneResult) {
     .join(" · ");
 }
 
-export default function App() {
+export default function CameraLab() {
   const [lang, setLang] = useState<Lang>("en");
   const [walking, setWalking] = useState(false);
   const [log, setLog] = useState<LogLine[]>([]);
@@ -43,6 +43,7 @@ export default function App() {
   const onSystem = useCallback((e: SystemEvent) => add("system", e), [add]);
 
   const walk = useWalkLoop({ lang, onResult, onSystem });
+  const { videoRef } = walk;
 
   const ask = useCallback(async (source: string) => {
     const t0 = performance.now();
@@ -52,22 +53,25 @@ export default function App() {
     add("ask", a.ok ? `→ ${describe(a.result)} in ${ms} ms` : `→ ${a.reason} in ${ms} ms`);
   }, [add, walk]);
 
-  const askRef = useRef(ask); askRef.current = ask;
-  const voice = useMemo(() => createVoiceCommand(() => {
-    void askRef.current("voice");
-  }), []);
+  const askRef = useRef(ask);
+  useLayoutEffect(() => { askRef.current = ask; });
+  // Created on first use (inside a tap), so no ref is read during render
+  const voiceRef = useRef<ReturnType<typeof createVoiceCommand> | null>(null);
+  const getVoice = () =>
+    (voiceRef.current ??= createVoiceCommand(() => { void askRef.current("voice"); }));
 
   function toggle() {
     if (walking) {
       walk.stop();
-      voice.stop();
+      getVoice().stop();
       setVoiceOn(false);
       setWalking(false);
+      setMeter(null);
       add("info", "stopped");
       return;
     }
     // Same order as the real app: mic and camera start inside the tap, before any await
-    if (voice.supported) setVoiceOn(voice.start(lang));
+    if (getVoice().supported) setVoiceOn(getVoice().start(lang));
     else add("voice", "speech recognition not supported in this browser");
     void walk.start();
     lastResultAt.current = null;
@@ -78,20 +82,20 @@ export default function App() {
   function switchLang() {
     const next = lang === "en" ? "fr" : "en";
     setLang(next);
-    if (walking && voiceOn) voice.start(next);
+    if (walking && voiceOn) getVoice().start(next);
     add("info", `language → ${next}`);
   }
 
   // Lens meter: brightness/contrast twice a second, to tune looksCovered on the real phone
   useEffect(() => {
-    if (!walking) { setMeter(null); return; }
+    if (!walking) return;
     const id = setInterval(() => {
-      const v = walk.videoRef.current;
+      const v = videoRef.current;
       const f = v ? captureFrame(v, 64) : null;
       if (f) setMeter({ b: Math.round(f.brightness), c: Math.round(f.contrast), covered: looksCovered(f) });
     }, 500);
     return () => clearInterval(id);
-  }, [walking, walk.videoRef]);
+  }, [walking, videoRef]);
 
   return (
     <main className="lab">
@@ -100,7 +104,7 @@ export default function App() {
         {MOCK && <span className="badge">MOCK DATA</span>}
       </header>
 
-      <video ref={walk.videoRef} playsInline muted autoPlay className="preview" />
+      <video ref={videoRef} playsInline muted autoPlay className="preview" />
 
       <div className="row">
         <button className="primary" onClick={toggle}>{walking ? "Stop" : "Start walk"}</button>

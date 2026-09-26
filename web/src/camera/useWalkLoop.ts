@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { analyze } from "../api/client";
 import type { Lang, SceneResult, SystemEvent } from "../api/types";
 import { captureFrame, looksCovered } from "./captureFrame";
@@ -22,10 +22,15 @@ interface Options {
 }
 
 export function useWalkLoop({ lang, onResult, onSystem }: Options) {
-  // refs so the running loop always sees the latest props
-  const langRef = useRef(lang); langRef.current = lang;
-  const onResultRef = useRef(onResult); onResultRef.current = onResult;
-  const onSystemRef = useRef(onSystem); onSystemRef.current = onSystem;
+  // refs so the running loop always sees the latest props (updated after each render)
+  const langRef = useRef(lang);
+  const onResultRef = useRef(onResult);
+  const onSystemRef = useRef(onSystem);
+  useLayoutEffect(() => {
+    langRef.current = lang;
+    onResultRef.current = onResult;
+    onSystemRef.current = onSystem;
+  });
 
   const camera = useCamera(useCallback(() => onSystemRef.current("camera_blocked"), []));
   const generation = useRef(0); // bumps on every start/stop, so an old loop can never keep running

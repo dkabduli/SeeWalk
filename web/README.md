@@ -1,19 +1,21 @@
-# Camera lab (Abdul)
+# SeeWalk web app
 
-A debug page for the camera + capture piece, built while the real `web/` app is being scaffolded. The files in `src/api/` and `src/camera/` are **exactly the code in [`docs/prd/abdul-camera-capture.md`](../../docs/prd/abdul-camera-capture.md)** and move into `web/src/` unchanged once Jibril's scaffold lands.
+The phone app (React + Vite + TypeScript). Owners: `src/api/` + `src/camera/` Abdul ([PRD](../docs/prd/abdul-camera-capture.md), code identical to the PRD); `src/pages/`, `src/audio/`, `src/alerts/`, `src/i18n/` Jibril ([PRD](../docs/prd/jibril-ui-audio.md)).
 
-The page shows the live camera, every `SceneResult` with the time since the last one, system events (`no_connection`, `camera_blocked`, …), a **lens meter** (brightness/contrast, for tuning "lens covered"), the voice-command status, and a big **What's ahead?** zone.
+**Right now `App.tsx` shows `pages/CameraLab.tsx`**, a debug page for the camera piece, until Jibril's `WalkMode` screen replaces it. It shows the live camera, every `SceneResult` with the time since the last one, system events (`no_connection`, `camera_blocked`, …), a **lens meter** (brightness/contrast, for tuning "lens covered"), the voice-command status, and a big **What's ahead?** zone.
 
 ## Run
 
 ```bash
-cd labs/camera-lab
+cd web
 npm install
 npm test                 # 32 behaviour tests (loop, voice command, covered-lens check)
+npm run build            # type-check + production build
+npx oxlint               # lint
 npm run dev              # http://localhost:5173
 ```
 
-Settings in `labs/camera-lab/.env.local`:
+Settings in `web/.env.local` (git-ignored):
 ```
 VITE_MOCK_API=1            # fake results, no server needed (delete to use Aroha's /analyze on :8000)
 VITE_FRAME_INTERVAL_MS=5000
