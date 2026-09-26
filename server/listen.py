@@ -65,12 +65,14 @@ Never guess: describe only what is clearly visible."""
 # ahead. Crosswalk ahead." into "SeeWalk, cross ahead" → cross. The transcript must contain the
 # wake word AND a keyword for the command, or it's treated as none.
 WAKE = re.compile(
-    r"\b(vision[\s-]?companion|see[\s-]?walk|sea[\s-]?walk|c[\s-]?walk|si[\s-]?walk|cee[\s-]?walk)\b",
+    # French dictation writes it "Cewalk", "Ciwalk" or "C'est walk"
+    r"\b(vision[\s-]?companion|see[\s-]?walk|sea[\s-]?walk|c[\s-]?walk|si[\s-]?walk|cee[\s-]?walk|ce[\s-]?walk|ci[\s-]?walk|c'est[\s-]?walk)\b",
     re.I,
 )
 KEYWORDS: dict[str, re.Pattern] = {
     "whats_ahead": re.compile(
-        r"ahead|front|devant|around|autour|(?:what(?:'s| is|s)|whats) (?:this|that)|c'est quoi|qu'est[- ]ce que c'est",
+        r"ahead|front|devant|around|autour|(?:what(?:'s| is|s)|whats) (?:this|that)|c'est quoi|qu'est[- ]ce que c'est"
+        r"|qu'est[- ]ce qu'il y a|qu'y a|y a-t-il",
         re.I,
     ),
     "holding": re.compile(r"hold|hand|tiens|tenir|main", re.I),

@@ -60,3 +60,13 @@ def test_where_was_is_answered_from_memory_not_a_new_look():
 
 def test_none_stays_none():
     assert verified_intent("none", "SeeWalk, what am I holding?") == "none"
+
+
+def test_french_dictation_of_the_wake_word_and_french_phrasings():
+    # French speech comes back as "Cewalk" / "C'est walk" (French-mode test with River's voice)
+    assert verified_intent("holding", "Cewalk, qu'est-ce que j'ai dans la main?") == "holding"
+    assert verified_intent("holding", "Ciwalk, qu'est-ce que je tiens ?") == "holding"
+    assert verified_intent("holding", "C'est walk, qu'est-ce que je tiens ?") == "holding"
+    assert verified_intent("whats_ahead", "SeeWalk, qu'est-ce qu'il y a?") == "whats_ahead"
+    assert verified_intent("whats_ahead", "SeeWalk, qu'y a-t-il devant ?") == "whats_ahead"
+    assert verified_intent("whats_ahead", "Cette walk qu'il y a") == "none"   # no wake word

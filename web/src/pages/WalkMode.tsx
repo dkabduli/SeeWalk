@@ -389,6 +389,7 @@ export default function WalkMode() {
   async function switchLang() {
     const next = lang === "en" ? "fr" : "en";
     setLang(next);
+    memory.current = new WalkMemory();           // its notes are in the old language
     if (walking) {
       getVoice().start(next);                    // listen in the new language
       await audio.preload(next);

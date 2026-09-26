@@ -6,7 +6,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import lang_guard  # noqa: E402
-from lang_guard import in_language, looks_english  # noqa: E402
+from lang_guard import in_language, looks_english, promises_safety  # noqa: E402
 
 # English slips seen in French mode (lab log 18:41, French sample eval)
 ENGLISH = [
@@ -61,3 +61,17 @@ def test_english_in_french_mode_is_translated(monkeypatch):
 
     monkeypatch.setattr(lang_guard, "translate", fake)
     assert asyncio.run(in_language("Door ahead", "fr")) == "Porte devant"
+
+
+@pytest.mark.parametrize("text", [
+    "Grand trottoir dégagé devant.", "Trottoir libre en face", "Chemin sans obstacle", "La voie est sûre",
+    "Path is clear", "Sidewalk clear ahead", "It's safe", "Chemin dégagée",
+])
+def test_never_promises_a_clear_or_safe_way(text):
+    assert promises_safety(text)
+    assert asyncio.run(in_language(text, "en")) == ""  # dropped, whatever the language
+
+
+@pytest.mark.parametrize("text", ["Bancs sur la gauche", "Glass door ahead", "Porte vitrée devant", "Nothing detected"])
+def test_ordinary_answers_pass(text):
+    assert promises_safety(text) is False

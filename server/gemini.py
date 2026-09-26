@@ -70,6 +70,7 @@ Also fill summary: the specific things in front that are not already a hazard, a
 doors are in front, the hazard type is elevator, not door, and the summary may name the call buttons. Empty if unclear.
 The app speaks a real hazard first, then this summary. A person does not replace the summary.
 LANGUAGE: write every phrase AND the summary in {language}, even though the examples here are in English.
+Never call a path or sidewalk clear, free or safe, in any language (not "clear", "dégagé", "libre", "sûr").
 Write each phrase in {language}, at most 4 words, naming the actual thing, then direction
 (e.g. "Pothole ahead", "Broken pavement ahead", "Curb ahead", "Stop sign on your right", "Cones ahead",
 "Door ahead", "Open door ahead", "Door opening ahead", "Elevator ahead", "Pillar ahead", "Chair ahead", "Pole on your right")."""
@@ -112,8 +113,9 @@ async def analyze_frame(
         timeout=8 if careful else 4,
     )
     result = SceneResult.model_validate_json(interaction.output_text)
-    if lang == "fr":  # French mode never speaks English (lang_guard.py)
-        result.summary = await in_language(result.summary, lang)
+    # Never English in French mode, never "clear"/"dégagé"/"safe" (lang_guard.py)
+    result.summary = await in_language(result.summary, lang)
+    if lang == "fr":
         for h in result.hazards:
             h.phrase = await in_language(h.phrase, lang) or h.phrase
     return result

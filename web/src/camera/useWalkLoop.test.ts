@@ -125,6 +125,24 @@ describe("useWalkLoop", () => {
     expect(onResult).toHaveBeenCalledWith(newer);
   });
 
+  it("an answer sent before a language switch isn't spoken (it's in the old language)", async () => {
+    const onResult = vi.fn<(r: SceneResult) => void>();
+    const onSystem = vi.fn<(e: SystemEvent) => void>();
+    const hook = renderHook(({ lang }) => useWalkLoop({ lang, onResult, onSystem }), {
+      initialProps: { lang: "en" as "en" | "fr" },
+    });
+    act(() => { void hook.result.current.start(); });
+    await tick();
+    hook.rerender({ lang: "fr" });        // walker tapped Français while it was in flight
+    calls[0].resolve(RESULT);
+    await tick();
+    expect(onResult).not.toHaveBeenCalled();
+    await tick(800);
+    calls[calls.length - 1].resolve(RESULT);
+    await tick();
+    expect(onResult).toHaveBeenCalledTimes(1); // the next one, sent in French, is
+  });
+
   it("never runs two loops after rapid Stop/Start, and drops results after Stop", async () => {
     const { walk, onResult } = setup();
     act(() => { void walk().start(); });

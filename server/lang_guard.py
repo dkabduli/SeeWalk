@@ -58,8 +58,20 @@ async def translate(text: str, lang: str) -> str:
         return ""
 
 
+# SeeWalk never says a way is clear or safe, in either language ("dégagé" and "libre" mean clear)
+_ALL_CLEAR = re.compile(
+    r"\b(clear|safe|safely|unobstructed|dégagée?s?|degagee?s?|libres?|sûre?s?|sans (danger|obstacle)|"
+    r"en sécurité|sécuritaire)\b",
+    re.I,
+)
+
+
+def promises_safety(text: str) -> bool:
+    return bool(_ALL_CLEAR.search(text))
+
+
 async def in_language(text: str, lang: str) -> str:
-    """The text, guaranteed not English when lang is French."""
-    if lang != "fr" or not text or not looks_english(text):
-        return text
-    return await translate(text, lang)
+    """The text, not English when lang is French, and never promising a clear or safe way."""
+    if lang == "fr" and text and looks_english(text):
+        text = await translate(text, lang)
+    return "" if promises_safety(text) else text

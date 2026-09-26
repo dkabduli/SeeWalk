@@ -157,13 +157,15 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), careful ? 8000 : TIMEOUT_MS);
       try {
-        const result = await analyze(b64, null, langRef.current, ctrl.signal, careful);
+        const sentLang = langRef.current;
+        const result = await analyze(b64, null, sentLang, ctrl.signal, careful);
         if (!alive()) return; // stopped while we were waiting: drop it
         if (fails >= 2) onSystemRef.current("connection_back");
         fails = 0;
         const waiting = takeAskers(careful);
         // A fast photo can become a street alert. A question photo is spoken by the asker.
-        if (!careful && seq > newestSpoken) {
+        // Sent before a language switch: it's in the old language, so it isn't spoken
+        if (!careful && seq > newestSpoken && langRef.current === sentLang) {
           newestSpoken = seq;
           if (waiting.length === 0) onResultRef.current(result);
         }
