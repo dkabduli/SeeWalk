@@ -4,11 +4,12 @@ import Webcam from "react-webcam";
 
 const deviceWidth = 600;
 const deviceHeight = 600;
+const facingMode= "user"
 
 const videoConstraints = {
     width: deviceWidth,
     height: deviceHeight,
-    facingMode: "user"
+    facingMode: facingMode
 };
 
 const CustomWebcam = () => {
@@ -64,6 +65,8 @@ const CustomWebcam = () => {
     return (
         <div className="container">
             <Webcam
+                audio={false}
+                screenshotFormat="image/jpeg"
                 videoConstraints={videoConstraints}
                 ref={webcamRef}
             />
