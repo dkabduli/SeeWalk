@@ -87,10 +87,26 @@ Open a PR into `main` and tell Abdul to merge it **right away**.
 import type { Lang } from "../api/types";
 
 export const strings: Record<Lang, Record<string, string>> = {
-  en: { start: "Start walk", stop: "Stop walk", ahead: "What's ahead?", lang: "Français",
-        walking: "Walking", idle: "Tap Start walk", noConn: "No connection", blocked: "Camera blocked" },
-  fr: { start: "Commencer", stop: "Arrêter", ahead: "Qu'y a-t-il devant ?", lang: "English",
-        walking: "En marche", idle: "Touchez Commencer", noConn: "Pas de connexion", blocked: "Caméra bloquée" },
+  en: {
+    start: "Start walk", stop: "Stop", ahead: "What's ahead?", lang: "Français",
+    walking: "Walking", idle: "Ready", noConn: "No connection", blocked: "Camera blocked",
+    tagline: "A white cane finds the ground. SeeWalk finds everything else.",
+    step1: "Hang the phone on your chest, rear camera facing forward.",
+    step2: "Put on open-ear or bone-conduction headphones.",
+    step3: "Tap Start. Any time, say “SeeWalk, what's ahead?” or tap the lower half of the screen.",
+    listening: "Listening for “SeeWalk, what's ahead?”",
+    quiet: "Nothing to report",
+  },
+  fr: {
+    start: "Commencer", stop: "Arrêter", ahead: "Qu'y a-t-il devant ?", lang: "English",
+    walking: "En marche", idle: "Prêt", noConn: "Pas de connexion", blocked: "Caméra bloquée",
+    tagline: "La canne blanche trouve le sol. SeeWalk trouve tout le reste.",
+    step1: "Portez le téléphone sur la poitrine, caméra arrière vers l'avant.",
+    step2: "Mettez des écouteurs ouverts ou à conduction osseuse.",
+    step3: "Touchez Commencer. À tout moment, dites « SeeWalk, qu'y a-t-il devant ? » ou touchez le bas de l'écran.",
+    listening: "À l'écoute de « SeeWalk, qu'y a-t-il devant ? »",
+    quiet: "Rien à signaler",
+  },
 };
 ```
 
@@ -104,6 +120,18 @@ export class AudioEngine {
   private ctx: AudioContext | null = null;
   private buffers = new Map<string, AudioBuffer>();
   private current: AudioBufferSourceNode | null = null;
+  private sounding = 0;
+
+  /** Called with true when SeeWalk starts making sound and false when it stops, so the voice
+   *  command can stop listening meanwhile (the mic otherwise hears SeeWalk's own voice). */
+  onSounding: ((on: boolean) => void) | null = null;
+
+  private soundStarted() {
+    if (this.sounding++ === 0) this.onSounding?.(true);
+  }
+  private soundEnded() {
+    if (this.sounding > 0 && --this.sounding === 0) this.onSounding?.(false);
+  }
 
   /** Call inside the Start button's tap handler. iOS blocks audio until a user gesture. */
   async unlock() {
@@ -155,7 +183,8 @@ export class AudioEngine {
     osc.connect(gain).connect(new StereoPannerNode(ctx, { pan })).connect(ctx.destination);
     osc.start(t);
     osc.stop(t + ms / 1000 + 0.02);
-    return new Promise((r) => setTimeout(r, ms + 40));
+    this.soundStarted();
+    return new Promise((r) => setTimeout(() => { this.soundEnded(); r(); }, ms + 40));
   }
 
   async playSpeech(mp3: ArrayBuffer, pan = 0) {
@@ -174,9 +203,11 @@ export class AudioEngine {
     const src = new AudioBufferSourceNode(ctx, { buffer });
     src.connect(new StereoPannerNode(ctx, { pan })).connect(ctx.destination);
     this.current = src;
+    this.soundStarted();
     return new Promise((resolve) => {
       src.onended = () => {
         if (this.current === src) this.current = null;
+        this.soundEnded();
         resolve();
       };
       src.start();
@@ -208,7 +239,7 @@ export function pickAlert(result: SceneResult, { ignoreRepeat = false } = {}): H
   const candidates = result.hazards.filter(
     (h) =>
       h.confidence >= MIN_CONFIDENCE &&
-      (ignoreRepeat || now - (lastSpoken.get(`${h.type}:${h.direction}`) ?? 0) >= REPEAT_MS),
+      (ignoreRepeat || now - (lastSpoken.get(`${h.type}:${h.direction}`) ?? -Infinity) >= REPEAT_MS),
   );
   if (candidates.length === 0) return null;
   candidates.sort(
@@ -241,24 +272,38 @@ Quick sanity test: call `pickAlert` twice with the same fake result within 5 s. 
 ### Step 5: `web/src/pages/WalkMode.tsx` (the screen)
 
 ```tsx
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
-import { tts } from "../api/client";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { MOCK, tts } from "../api/client";
 import type { Hazard, Lang, SceneResult, SystemEvent } from "../api/types";
-import { audio } from "../audio/AudioEngine";
 import { fallbackClip, panFor, pickAlert } from "../alerts/pickAlert";
+import { audio } from "../audio/AudioEngine";
+import clips from "../audio/clips.json";
 import { useWalkLoop } from "../camera/useWalkLoop";
 import { createVoiceCommand } from "../camera/voiceCommand";
+import { sendToLaptop } from "../debug/laptopLog";
 import { strings } from "../i18n/strings";
-import { MOCK } from "../api/client";
-import clips from "../audio/clips.json";
+import "../styles/walk.css";
 
 type ClipTable = Record<string, Record<Lang, string>>;
+type Status = "idle" | "walking" | "noConn" | "blocked";
+
+/** What's on the alert panel: the phrase, where it is, and how serious. */
+interface Shown {
+  text: string;
+  direction?: Hazard["direction"];
+  level: "urgent" | "warning" | "info" | "system";
+}
+
+const ARROW: Record<Hazard["direction"], string> = { left: "←", ahead: "↑", right: "→" };
+const levelOf = (h: Hazard): Shown["level"] => (h.urgency === 1 ? "urgent" : h.urgency === 2 ? "warning" : "info");
+const log = (kind: string, text: string) =>
+  sendToLaptop({ at: new Date().toLocaleTimeString([], { hour12: false }), kind, text });
 
 export default function WalkMode() {
   const [lang, setLang] = useState<Lang>("en");
   const [walking, setWalking] = useState(false);
-  const [caption, setCaption] = useState("");
-  const [status, setStatus] = useState<"idle" | "walking" | "noConn" | "blocked">("idle");
+  const [shown, setShown] = useState<Shown | null>(null);
+  const [status, setStatus] = useState<Status>("idle");
   const t = strings[lang];
 
   // Only one alert at a time. Each alert gets an id; if a newer one starts (urgent, or the
@@ -273,9 +318,10 @@ export default function WalkMode() {
     const current = () => speechId.current === id;
     speaking.current = true;
     audio.stop();
+    log("say", `${h.phrase} (${h.type}/${h.direction}/${h.distance} u${h.urgency}${asked ? ", asked" : ""})`);
     try {
       const pan = panFor(h);
-      setCaption(h.phrase);
+      setShown({ text: h.phrase, direction: h.direction, level: levelOf(h) });
       await audio.playTone(pan, h.urgency === 1 ? 1200 : 1000);
       if (!current()) return;
       const key = fallbackClip(h);
@@ -302,8 +348,9 @@ export default function WalkMode() {
   }, [speak]);
 
   const onSystem = useCallback(async (e: SystemEvent) => {
+    log("system", e);
     setStatus(e === "no_connection" ? "noConn" : e === "camera_blocked" ? "blocked" : "walking");
-    setCaption(e === "connection_back" ? "" : strings[lang][e === "no_connection" ? "noConn" : "blocked"]);
+    setShown(e === "connection_back" ? null : { text: strings[lang][e === "no_connection" ? "noConn" : "blocked"], level: "system" });
     audio.stop();
     await audio.playTone(0, 440, 250);
     await audio.playClip(lang, e);
@@ -312,15 +359,54 @@ export default function WalkMode() {
   const walk = useWalkLoop({ lang, onResult, onSystem });
   const { videoRef } = walk;
 
-  // Voice command "What's ahead?" (Abdul's code). The ref keeps the latest whatsAhead.
+  // Fast layer (Abdul): on-device person/bike/car warnings into the same onResult.
+  // The model is downloaded as soon as this screen opens (it took ~19 s cold).
+  const langRef = useRef(lang);
+  const onResultRef = useRef(onResult);
+  useLayoutEffect(() => { langRef.current = lang; onResultRef.current = onResult; });
+  const fastStop = useRef<(() => void) | null>(null);
+  const fastGen = useRef(0);
+  useEffect(() => {
+    void import("../detection/fastLayer").then((m) => m.preloadFastLayer()).catch(() => {});
+  }, []);
+  async function startFast(gen: number) {
+    const video = videoRef.current;
+    for (let i = 0; i < 100 && video && !video.videoWidth; i++) await new Promise((r) => setTimeout(r, 100));
+    if (!video || fastGen.current !== gen) return;
+    try {
+      const { startFastLayer } = await import("../detection/fastLayer");
+      const stop = await startFastLayer(video, () => langRef.current, (r) => onResultRef.current(r));
+      if (fastGen.current !== gen) { stop(); return; } // Stop was tapped while the model loaded
+      fastStop.current = stop;
+    } catch (e) {
+      console.warn("fast layer unavailable", e); // optional: Gemini still works without it
+    }
+  }
+
+  // Voice command "SeeWalk, what's ahead?" (Abdul's code). The mic is ignored while SeeWalk is
+  // making sound, so it never hears (and pays Gemini to transcribe) its own voice.
   const whatsAheadRef = useRef<() => void>(() => {});
   const voiceRef = useRef<ReturnType<typeof createVoiceCommand> | null>(null);
-  const getVoice = () => (voiceRef.current ??= createVoiceCommand(() => whatsAheadRef.current()));
+  const getVoice = () => {
+    if (!voiceRef.current) {
+      const voice = createVoiceCommand(() => whatsAheadRef.current(), (msg) => log("voice", msg));
+      audio.onSounding = (on) => voice.setSpeaking(on);
+      voiceRef.current = voice;
+    }
+    return voiceRef.current;
+  };
 
   async function toggle() {
     if (walking) {
+      log("info", "stopped");
+      fastGen.current++;
+      fastStop.current?.();
+      fastStop.current = null;
       walk.stop();
       getVoice().stop();
+      speechId.current++;                        // cancel any alert still on its way
+      audio.stop();
+      setShown(null);
       setWalking(false);
       setStatus("idle");
       await audio.playClip(lang, "walk_stopped");
@@ -330,6 +416,8 @@ export default function WalkMode() {
     const unlocking = audio.unlock();
     getVoice().start(lang);                      // mic permission prompt on first use
     walk.start();                                // runs until Stop, don't await; camera prompt on first use
+    void startFast(++fastGen.current);
+    log("info", `started (${lang}${MOCK ? ", MOCK" : ""})`);
     setWalking(true);
     setStatus("walking");
     await unlocking;
@@ -339,19 +427,20 @@ export default function WalkMode() {
 
   async function whatsAhead() {
     if (!walking) return;
+    log("ask", "What's ahead?");
     const answer = await walk.checkNow();        // the snapshot in flight, or a new one now
     audio.stop();                                // they asked: this answer comes first
     if (!answer.ok) {
       if (answer.reason === "stopped") return;
       speechId.current++;                        // cancel any alert still on its way
-      setCaption(strings[lang][answer.reason === "no_connection" ? "noConn" : "blocked"]);
+      setShown({ text: strings[lang][answer.reason === "no_connection" ? "noConn" : "blocked"], level: "system" });
       await audio.playClip(lang, answer.reason); // "No connection…" or "Camera blocked"
       return;
     }
     const r = answer.result;
     if (r.unclear) {
       speechId.current++;
-      setCaption(lang === "fr" ? "Incertain" : "Unclear");
+      setShown({ text: lang === "fr" ? "Incertain" : "Unclear", level: "info" });
       await audio.playClip(lang, "unclear");
       return;
     }
@@ -361,7 +450,8 @@ export default function WalkMode() {
     } else {
       speechId.current++;
       // They asked, so never answer with silence, but never promise "safe" or "clear" either
-      setCaption(lang === "fr" ? "Rien de détecté" : "Nothing detected");
+      setShown({ text: lang === "fr" ? "Rien de détecté" : "Nothing detected", level: "info" });
+      log("say", "Nothing detected (asked)");
       await audio.playClip(lang, "nothing_detected");
     }
   }
@@ -377,35 +467,56 @@ export default function WalkMode() {
   }
 
   return (
-    <main className="walk">
-      <video ref={videoRef} playsInline muted autoPlay className="preview" aria-hidden="true" />
-      {MOCK && <p className="mock-badge">MOCK DATA</p>}
-      <p className="status" role="status">{t[status]}</p>
-      <p className="caption" aria-live="polite">{caption}</p>
-      <div className="row">
-        <button className="primary" onClick={toggle}>{walking ? t.stop : t.start}</button>
-        <button onClick={switchLang} lang={lang === "en" ? "fr" : "en"}>{t.lang}</button>
+    <main className={`walk ${walking ? "is-walking" : "is-idle"}`}>
+      <header className="bar">
+        <span className="brand" aria-label="SeeWalk">See<b>Walk</b></span>
+        {MOCK && <span className="mock">MOCK</span>}
+        <span className={`status ${status}`} role="status">{t[status]}</span>
+        <button className="lang" onClick={switchLang} lang={lang === "en" ? "fr" : "en"}>{t.lang}</button>
+      </header>
+
+      <div className="viewfinder">
+        <video ref={videoRef} playsInline muted autoPlay aria-hidden="true" />
+        {!walking && (
+          <div className="setup">
+            <p className="tagline">{t.tagline}</p>
+            <ol>
+              <li>{t.step1}</li>
+              <li>{t.step2}</li>
+              <li>{t.step3}</li>
+            </ol>
+          </div>
+        )}
       </div>
-      {/* The whole lower half of the screen: tap anywhere to ask */}
-      <button className="ahead-zone" onClick={whatsAhead} disabled={!walking}>{t.ahead}</button>
+
+      {walking && (
+        <section className={`alert ${shown?.level ?? "none"}`} aria-live="polite">
+          <span className="arrow" aria-hidden="true">{shown?.direction ? ARROW[shown.direction] : shown ? "•" : ""}</span>
+          <span className="text">{shown?.text ?? t.listening}</span>
+        </section>
+      )}
+
+      {walking ? (
+        <div className="controls">
+          <button className="ahead" onClick={whatsAhead}>{t.ahead}</button>
+          <button className="stop" onClick={toggle}>{t.stop}</button>
+        </div>
+      ) : (
+        <button className="start" onClick={toggle}>{t.start}</button>
+      )}
     </main>
   );
 }
 ```
 
-Render it from `App.tsx` (`export default function App() { return <WalkMode />; }`).
+`App.tsx` renders `<WalkMode />` by default (Aroha's capture page is at `?capture`, the camera lab at `?lab`). **Built Sept 26 by Abdul from this PRD in Jibril's theme** (`web/src/styles/walk.css`), including the fast layer (Step 9) and voice command; verified in a browser: "Walk mode on", tones panned to the correct ear, clips, the fast layer, "What's ahead?", "Walk mode off".
 
 ### Step 6: Styling for sunlight + camera
 
-In `index.css` (replace Vite's default):
-- Black background, white text, one strong accent (e.g. yellow `#FFD400`) for the Start button
-- `.primary`: full width, **≥ 120 px tall**, 28 px+ bold text
-- `.caption`: 36–44 px bold, centred. **This is what viewers read in the video**
-- `.preview`: the live camera, top ~35% of the screen, `object-fit: cover`. It looks great on camera
-- `.mock-badge`: bright red corner label, only shown while `VITE_MOCK_API=1`, so fake results can't sneak into the video
-- `.ahead-zone`: **the entire lower half of the screen**, one big button reading "What's ahead?". Walkers can hit it without looking; with VoiceOver it's one clearly labelled button
-- The phone hangs **portrait** on a lanyard, so design for portrait only
-- All buttons ≥ 56 px tall, clear focus outline
+Built in `web/src/styles/walk.css`. Colours come from the white cane: near-black `#0f1113`, white, and the red tip `#e0362c` (urgent, Stop); amber `#f3b21b` = warning, steel `#7d8ea3` = info. Flat and high-contrast, system font, no gradients or decorative motion (the earlier gradient/serif look read as generic).
+- **Setup screen:** tagline + 3 wearing steps (EN/FR), one big white **Start walk** button
+- **Walking:** status dot, camera, **alert panel** with a direction arrow (← ↑ →) and an urgency colour bar, a big white **What's ahead?** target filling the bottom, a red outlined **Stop**
+- Caption text is 26–36 px bold: that's what viewers read in the video
 
 ### Step 7: Build without the backend
 1. Hard-code a result: call `onResult(fakeResult)` from a temporary "Test" button, using the fake JSON from the [shared contract](README.md).

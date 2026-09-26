@@ -1,0 +1,113 @@
+/* Walk Mode. Colours come from the white cane itself: near-black, white, and the red tip.
+   Flat, high contrast, readable in sunlight and on camera; no gradients, no decorative motion.
+   The screen covers the whole page (fixed), so the global page background doesn't show. */
+.walk {
+  --bg: #0f1113;
+  --panel: #1a1d21;
+  --line: #2e3238;
+  --text: #f4f2ed;
+  --muted: #a3a8ae;
+  --white: #ffffff;
+  --red: #e0362c;      /* cane tip: urgent, Stop */
+  --amber: #f3b21b;    /* warning */
+  --steel: #7d8ea3;    /* information */
+
+  position: fixed; inset: 0; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 12px;
+  padding: max(12px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom));
+  background: var(--bg); color: var(--text);
+  font: 17px/1.35 -apple-system, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.walk button { font: inherit; border: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.walk button:focus-visible { outline: 3px solid var(--white); outline-offset: 3px; }
+
+/* Top bar: wordmark, status, language */
+.walk .bar { display: flex; align-items: center; gap: 10px; min-height: 40px; }
+.walk .brand {
+  margin-right: auto; font-size: 24px; font-weight: 800; letter-spacing: -0.4px;
+  display: inline-flex; align-items: center;
+}
+.walk .brand b { font-weight: 800; }
+.walk .brand::after {        /* the red tip of a white cane */
+  content: ""; width: 22px; height: 4px; margin-left: 8px; border-radius: 2px;
+  background: linear-gradient(90deg, var(--white) 0 60%, var(--red) 60%);
+}
+.walk .mock { background: var(--red); color: var(--white); font-size: 12px; font-weight: 800; padding: 3px 8px; border-radius: 6px; }
+.walk .status {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 15px; font-weight: 600; color: var(--muted);
+}
+.walk .status::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+.walk .status.walking { color: var(--text); }
+.walk .status.walking::before { background: #3ecf6e; }
+.walk .status.noConn, .walk .status.blocked { color: var(--red); }
+.walk .status.noConn::before, .walk .status.blocked::before { background: var(--red); }
+.walk .lang {
+  padding: 8px 12px; border-radius: 10px; background: var(--panel); color: var(--text);
+  font-size: 15px; font-weight: 600; border: 1px solid var(--line);
+}
+
+/* Camera. Idle: the setup instructions sit on top of it. */
+.walk .viewfinder {
+  position: relative; border-radius: 16px; overflow: hidden;
+  background: #000; border: 1px solid var(--line);
+  height: 34dvh; min-height: 190px;
+}
+.walk.is-idle .viewfinder { flex: 1; height: auto; min-height: 320px; }
+.walk .viewfinder video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.walk .setup {            /* camera is off before Start, so the steps sit centred on black */
+  position: absolute; inset: 0; padding: 24px 20px;
+  display: flex; flex-direction: column; justify-content: center; gap: 22px;
+  background: var(--bg);
+}
+.walk .tagline { margin: 0; font-size: clamp(24px, 6.6vw, 32px); font-weight: 800; line-height: 1.15; letter-spacing: -0.3px; }
+.walk .setup ol { margin: 0; padding: 0; list-style: none; counter-reset: step; display: grid; gap: 10px; }
+.walk .setup li {
+  counter-increment: step; display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: start;
+  font-size: 16px; color: var(--text);
+}
+.walk .setup li::before {
+  content: counter(step); width: 26px; height: 26px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 14px; font-weight: 800;
+  background: var(--white); color: var(--bg);
+}
+
+/* The alert panel: what SeeWalk just said, where, and how serious (colour bar) */
+.walk .alert {
+  display: grid; grid-template-columns: 64px 1fr; align-items: center; gap: 12px;
+  min-height: 96px; padding: 12px 16px 12px 12px;
+  background: var(--panel); border: 1px solid var(--line); border-left: 8px solid var(--line);
+  border-radius: 14px;
+}
+.walk .alert .arrow { font-size: 52px; font-weight: 800; line-height: 1; text-align: center; }
+.walk .alert .text { font-size: clamp(26px, 7.4vw, 36px); font-weight: 800; line-height: 1.12; letter-spacing: -0.3px; }
+.walk .alert.none .text { font-size: 18px; font-weight: 500; color: var(--muted); }
+.walk .alert.urgent  { border-left-color: var(--red); }
+.walk .alert.urgent .arrow { color: var(--red); }
+.walk .alert.warning { border-left-color: var(--amber); }
+.walk .alert.warning .arrow { color: var(--amber); }
+.walk .alert.info    { border-left-color: var(--steel); }
+.walk .alert.system  { border-left-color: var(--red); background: #2a1715; }
+
+/* Controls. Walking: the big "What's ahead?" target fills the bottom of the screen. */
+.walk .start {
+  min-height: 84px; border-radius: 16px; background: var(--white); color: var(--bg);
+  font-size: 28px; font-weight: 800; letter-spacing: -0.2px;
+}
+.walk .controls { flex: 1; display: grid; grid-template-rows: 1fr auto; gap: 10px; min-height: 30dvh; }
+.walk .ahead {
+  border-radius: 18px; background: var(--white); color: var(--bg);
+  font-size: clamp(32px, 9vw, 44px); font-weight: 800; letter-spacing: -0.5px;
+}
+.walk .stop {
+  min-height: 60px; border-radius: 14px; background: transparent; color: var(--red);
+  border: 2px solid var(--red); font-size: 20px; font-weight: 800;
+}
+.walk .start:active, .walk .ahead:active { background: #dcdad4; }
+.walk .stop:active { background: rgb(224 54 44 / 0.12); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .walk .alert .text { animation: walk-in 0.18s ease-out; }
+}
+@keyframes walk-in { from { opacity: 0.4; } to { opacity: 1; } }

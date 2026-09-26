@@ -236,6 +236,36 @@ describe("createVoiceCommand", () => {
     expect(listenCalls[0].lang).toBe("fr");
   });
 
+  it("doesn't listen to SeeWalk's own voice (no echo clips)", async () => {
+    const voice = createVoiceCommand(vi.fn());
+    voice.start("en");
+    await flush();
+    voice.setSpeaking(true);          // SeeWalk says "Stop sign ahead" through the speaker
+    await say();
+    expect(listenCalls).toHaveLength(0);
+    voice.setSpeaking(false);
+    await say();                      // right after: still inside the echo tail
+    expect(listenCalls).toHaveLength(0);
+    const later = Date.now() + 1000;
+    const spy = vi.spyOn(Date, "now").mockReturnValue(later);
+    await say();                      // the walker speaks after SeeWalk finished
+    expect(listenCalls).toHaveLength(1);
+    spy.mockRestore();
+  });
+
+  it("a sentence cut off by SeeWalk starting to talk is thrown away, not sent half", async () => {
+    const voice = createVoiceCommand(vi.fn());
+    voice.start("en");
+    await flush();
+    for (let i = 0; i < blocks(0.5); i++) proc.feed(quiet());
+    for (let i = 0; i < blocks(0.6); i++) proc.feed(speech());
+    voice.setSpeaking(true);          // SeeWalk starts talking over the walker
+    for (let i = 0; i < blocks(1.5); i++) proc.feed(speech());
+    for (let i = 0; i < blocks(1); i++) proc.feed(quiet());
+    await flush();
+    expect(listenCalls).toHaveLength(0);
+  });
+
   it("reports unsupported browsers instead of crashing", () => {
     vi.stubGlobal("AudioContext", undefined);
     const voice = createVoiceCommand(vi.fn());
