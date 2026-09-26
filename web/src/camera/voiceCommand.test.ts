@@ -277,6 +277,31 @@ describe("createVoiceCommand", () => {
     expect(listenCalls).toHaveLength(0);
   });
 
+  it("held (answering a question): new speech is ignored, then heard again", async () => {
+    const voice = createVoiceCommand(vi.fn());
+    voice.start("en");
+    await flush();
+    voice.hold(true);
+    await say();
+    expect(listenCalls).toHaveLength(0);
+    voice.hold(false);
+    const spy = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 1000);
+    await say();
+    expect(listenCalls).toHaveLength(1);
+    spy.mockRestore();
+  });
+
+  it("reports when a clip is being checked (so the app can pause everything else)", async () => {
+    const checking: boolean[] = [];
+    createVoiceCommand(vi.fn(), undefined, undefined, (c) => checking.push(c)).start("en");
+    await flush();
+    await say();
+    expect(checking).toEqual([true]);
+    listenCalls[0].resolve({ heard: "hi", intent: "none", answer: "", command: false });
+    await flush();
+    expect(checking).toEqual([true, false]);
+  });
+
   it("reports unsupported browsers instead of crashing", () => {
     vi.stubGlobal("AudioContext", undefined);
     const voice = createVoiceCommand(vi.fn());

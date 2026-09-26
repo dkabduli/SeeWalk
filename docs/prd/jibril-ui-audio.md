@@ -345,6 +345,9 @@ export default function WalkMode() {
   // walker asked), the older one stops at its next step instead of talking over it.
   const speechId = useRef(0);
   const speaking = useRef(false);
+  // Set while a spoken question is being checked (checkingVoice) or answered (answering count)
+  const checkingVoice = useRef(false);
+  const answering = useRef(0);
 
   const speak = useCallback(async (h: Hazard, asked = false) => {
     const interrupt = h.urgency === 1 || asked;
@@ -379,6 +382,7 @@ export default function WalkMode() {
 
   const onResult = useCallback((r: SceneResult) => {
     if (!autoAlertsRef.current) return;          // voice-only mode: stay quiet unless asked
+    if (answering.current > 0) return;           // never talk over an answer
     const h = pickAlert(r);
     if (h) speak(h);
   }, [speak]);
@@ -394,6 +398,8 @@ export default function WalkMode() {
 
   const walk = useWalkLoop({ lang, onResult, onSystem });
   const { videoRef } = walk;
+  const walkRef = useRef(walk);
+  useLayoutEffect(() => { walkRef.current = walk; });
 
   // Fast layer (Abdul): on-device person/bike/car warnings into the same onResult.
   // The model is downloaded as soon as this screen opens (it took ~19 s cold).
@@ -422,7 +428,6 @@ export default function WalkMode() {
   /** Say a free-form answer (from Gemini) in River's live voice; "Sorry, I can't tell" if empty. */
   const sayAnswer = useCallback(async (text: string, kind: string) => {
     const id = ++speechId.current;
-    audio.stop();
     log("say", `${text || "(no answer)"} (${kind}, asked)`);
     if (text) {
       setShown({ text, level: "info" });
@@ -437,6 +442,24 @@ export default function WalkMode() {
     await audio.playClip(lang, "not_sure");
   }, [lang]);
 
+  // While a question is being checked or answered, everything else waits: no background
+  // snapshots to Gemini, no automatic alerts, no new listening. Then it all resumes.
+  const updatePause = () => walkRef.current?.setPaused(checkingVoice.current || answering.current > 0);
+  async function answeringQuestion(work: () => Promise<void>) {
+    answering.current++;
+    speechId.current++;                          // cancel anything SeeWalk was in the middle of saying
+    audio.stop();
+    voiceRef.current?.hold(true);
+    updatePause();
+    try {
+      await work();
+    } finally {
+      answering.current--;
+      if (answering.current === 0) voiceRef.current?.hold(false);
+      updatePause();
+    }
+  }
+
   // Voice commands ("SeeWalk, …"): one Gemini call with the speech clip + the current frame.
   // The mic is ignored while SeeWalk is making sound, so it never hears its own voice.
   const onVoiceRef = useRef<(c: ListenResult) => void>(() => {});
@@ -447,6 +470,7 @@ export default function WalkMode() {
         (c) => onVoiceRef.current(c),
         (msg) => log("voice", msg),
         () => { const v = videoRef.current; return v ? captureFrame(v)?.b64 ?? null : null; },
+        (checking) => { checkingVoice.current = checking; updatePause(); },
       );
       audio.onSounding = (on) => voice.setSpeaking(on);
       voiceRef.current = voice;
@@ -492,60 +516,48 @@ export default function WalkMode() {
 
   async function whatsAhead() {
     if (!walking) return;
-    log("ask", "What's ahead?");
-    const answer = await walk.checkNow();        // the snapshot in flight, or a new one now
-    audio.stop();                                // they asked: this answer comes first
-    if (!answer.ok) {
-      if (answer.reason === "stopped") return;
-      speechId.current++;                        // cancel any alert still on its way
-      setShown({ text: strings[lang][answer.reason === "no_connection" ? "noConn" : "blocked"], level: "system" });
-      await audio.playClip(lang, answer.reason); // "No connection…" or "Camera blocked"
-      return;
-    }
-    const r = answer.result;
-    if (r.unclear) {
-      speechId.current++;
-      setShown({ text: lang === "fr" ? "Incertain" : "Unclear", level: "info" });
-      await audio.playClip(lang, "unclear");
-      return;
-    }
-    const h = pickAlert(r, { ignoreRepeat: true });
-    if (h) {
-      await speak(h, true);                      // a hazard always comes first
-      return;
-    }
-    const id = ++speechId.current;
-    const summary = r.summary?.trim();
-    if (summary) {
-      // No hazard, but they asked: say what's there ("Laptop and lotion on a table")
-      setShown({ text: summary, level: "info" });
-      log("say", `${summary} (summary, asked)`);
-      try {
-        const mp3 = await tts(summary, lang);
-        if (speechId.current === id) await audio.playSpeech(mp3, 0);
+    log("ask", "What's ahead? (tap)");
+    await answeringQuestion(async () => {
+      const answer = await walk.checkNow();      // the snapshot in flight, or a new one now
+      if (!answer.ok) {
+        if (answer.reason === "stopped") return;
+        setShown({ text: strings[lang][answer.reason === "no_connection" ? "noConn" : "blocked"], level: "system" });
+        await audio.playClip(lang, answer.reason); // "No connection…" or "Camera blocked"
         return;
-      } catch { /* live voice failed: fall through to the bundled clip */ }
-    }
-    if (speechId.current !== id) return;
-    // Never answer a question with silence, but never promise "safe" or "clear" either
-    setShown({ text: lang === "fr" ? "Rien de détecté" : "Nothing detected", level: "info" });
-    log("say", "Nothing detected (asked)");
-    await audio.playClip(lang, "nothing_detected");
+      }
+      const r = answer.result;
+      if (r.unclear) {
+        setShown({ text: lang === "fr" ? "Incertain" : "Unclear", level: "info" });
+        await audio.playClip(lang, "unclear");
+        return;
+      }
+      // Describe the scene ("Laptop and a cup on a table"), not hazard labels ("Person ahead")
+      const summary = r.summary?.trim();
+      if (summary) return sayAnswer(summary, "whats_ahead");
+      const h = pickAlert(r, { ignoreRepeat: true });
+      if (h) return sayAnswer(h.phrase, "whats_ahead");
+      // Never answer a question with silence, but never promise "safe" or "clear" either
+      setShown({ text: lang === "fr" ? "Rien de détecté" : "Nothing detected", level: "info" });
+      log("say", "Nothing detected (asked)");
+      await audio.playClip(lang, "nothing_detected");
+    });
   }
+
   async function onVoice(c: ListenResult) {
     if (!walking) return;
     log("ask", `voice: ${c.intent}`);
-    if (c.intent === "whats_ahead") return whatsAhead();
-    if (c.intent === "cross") {
-      // Never tells anyone it's safe to cross (spec). Fixed, pre-made answer.
-      speechId.current++;
-      audio.stop();
-      setShown({ text: t.crossRefusal, level: "system" });
-      log("say", "cross refusal");
-      await audio.playClip(lang, "cross_refusal");
-      return;
-    }
-    await sayAnswer(c.answer, c.intent);         // holding / path / read
+    await answeringQuestion(async () => {
+      if (c.intent === "cross") {
+        // Never tells anyone it's safe to cross (spec). Fixed, pre-made answer.
+        setShown({ text: t.crossRefusal, level: "system" });
+        log("say", "cross refusal");
+        await audio.playClip(lang, "cross_refusal");
+        return;
+      }
+      // whats_ahead / holding / path / read: Gemini answered from the frame taken as you finished
+      // speaking ("A table with a laptop and a cup, a chair on your left")
+      await sayAnswer(c.answer, c.intent);
+    });
   }
   useLayoutEffect(() => { onVoiceRef.current = onVoice; });
 

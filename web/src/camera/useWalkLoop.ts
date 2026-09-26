@@ -40,6 +40,10 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
   const cutWaitShort = useRef<(() => void) | null>(null);
   const askers = useRef<((r: CheckResult) => void)[]>([]);
   const resetFailures = useRef(false);
+  // Paused while SeeWalk is answering a question: no background snapshots go to Gemini, so the
+  // answer isn't competing with them. "What's ahead?" (checkNow) still works while paused.
+  const paused = useRef(false);
+  const setPaused = useCallback((on: boolean) => { paused.current = on; }, []);
 
   const keepAwake = useCallback(async () => {
     try { wakeLock.current = await navigator.wakeLock?.request("screen"); } catch { /* refused: fine */ }
@@ -97,6 +101,14 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
     while (alive()) {
       const roundStart = performance.now();
       if (resetFailures.current) { fails = 0; resetFailures.current = false; }
+      if (paused.current && askers.current.length === 0) {
+        await new Promise<void>((resolve) => {
+          const t = setTimeout(resolve, 250);
+          cutWaitShort.current = () => { clearTimeout(t); resolve(); };
+        });
+        cutWaitShort.current = null;
+        continue;
+      }
       const video = camera.videoRef.current;
       const frame = video && camera.isLive() ? captureFrame(video) : null;
       const blocked = !camera.isLive() || (frame !== null && looksCovered(frame));
@@ -166,7 +178,7 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
   }, [camera]);
 
   return useMemo(
-    () => ({ videoRef: camera.videoRef, start, stop, checkNow }),
-    [camera.videoRef, start, stop, checkNow],
+    () => ({ videoRef: camera.videoRef, start, stop, checkNow, setPaused }),
+    [camera.videoRef, start, stop, checkNow, setPaused],
   );
 }

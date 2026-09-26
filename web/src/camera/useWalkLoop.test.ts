@@ -157,6 +157,38 @@ describe("useWalkLoop", () => {
     expect(onResult.mock.calls.length).toBeLessThanOrEqual(6);
   });
 
+  it("paused (answering a question): no background snapshots, then resumes", async () => {
+    const { walk } = setup();
+    act(() => { void walk().start(); });
+    await tick();
+    calls[0].resolve(RESULT);
+    await tick();
+    act(() => walk().setPaused(true));
+    await tick(6000);
+    expect(calls).toHaveLength(1);            // nothing sent while paused
+    act(() => walk().setPaused(false));
+    await tick(600);
+    expect(calls).toHaveLength(2);            // back to normal
+  });
+
+  it("What's ahead? still works while paused", async () => {
+    const { walk } = setup();
+    act(() => { void walk().start(); });
+    await tick();
+    calls[0].resolve(RESULT);
+    await tick();
+    act(() => walk().setPaused(true));
+    let answer: unknown;
+    act(() => { void walk().checkNow().then((a) => { answer = a; }); });
+    await tick(300);
+    expect(calls).toHaveLength(2);
+    calls[1].resolve(RESULT);
+    await tick();
+    expect(answer).toEqual({ ok: true, result: RESULT });
+    await tick(5000);
+    expect(calls).toHaveLength(2);            // and it stays paused afterwards
+  });
+
   it("says no_connection after 2 failures in a row, then connection_back", async () => {
     const { walk, onSystem } = setup();
     act(() => { void walk().start(); });

@@ -6,7 +6,7 @@ frame. In ONE Gemini call we transcribe the clip, work out which command (if any
 answer it from the frame, so the answer comes ~2 s after the walker stops talking.
 
 Commands (all need the wake word "SeeWalk"):
-    whats_ahead  "what's ahead / in front of me?"   → the app answers (hazards first, then summary)
+    whats_ahead  "what's ahead / in front of me?"   → a short description of the scene
     holding      "what am I holding / what's in my hand?"
     path         "what's blocking my path / is my path clear?"   (never says "clear" or "safe")
     read         "read this / what does the sign say?"
@@ -46,13 +46,16 @@ PROMPT = """The audio is a short clip from the phone microphone of a blind pedes
    Anything else (no wake word, background talk, or a voice announcing hazards like "Pothole ahead")
    is none.
 3. answer, in {language}, from the image only, for these intents:
+   - whats_ahead: describe what is in front in at most 12 words, most important first, as a short
+     phrase, not labels ("A table with a laptop and a cup, a chair on your left"). If nothing is
+     clearly visible: "Nothing detected ahead".
    - holding: name the object in the person's hand in at most 8 words ("A blue water bottle").
      If no hand or held object is visible: "I can't see anything in your hand".
    - path: the obstacles in the walking path straight ahead, at most 12 words ("A chair and a bin
      ahead"). If none: "Nothing detected in your path". Never say "clear" or "safe".
    - read: the visible text, word for word, at most 25 words. If none is readable: "I can't see any
      text to read".
-   - whats_ahead, cross, none: "" (the app handles these).
+   - cross, none: "" (the app handles these).
 Never guess: describe only what is clearly visible."""
 
 

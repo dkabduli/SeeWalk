@@ -79,12 +79,14 @@ Request: `{ "audio": "<base64 16 kHz mono WAV>", "lang": "en", "image": "<base64
 
 | Say "SeeWalk, …" | `intent` | Who answers |
 |---|---|---|
-| what's ahead / in front of me | `whats_ahead` | the app (hazards first, then `summary`) |
+| what's ahead / in front of me | `whats_ahead` | Gemini `answer`: a short description of the scene ("A table with a laptop and a cup, a chair on your left") |
 | what am I holding / what's in my hand | `holding` | Gemini `answer` → live ElevenLabs |
 | what's blocking my path / is my path clear | `path` | Gemini `answer` (never "clear" / "safe") |
 | read this / what does the sign say | `read` | Gemini `answer` (up to ~25 words) |
 | is it safe to cross | `cross` | fixed refusal clip `cross_refusal`: never a yes |
 | anything else, or no wake word | `none` | nothing |
+
+While a question is being checked or answered, the app **pauses everything else** (background snapshots, automatic alerts, listening) and resumes after the answer.
 
 Gemini's intent is **double-checked in code** against its transcript (wake word + a keyword for that command), because in testing it let "What am I holding?" through without "SeeWalk" and turned SeeWalk's own "Crosswalk ahead" into "cross". Lives in `server/listen.py`.
 

@@ -337,6 +337,10 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
   const cutWaitShort = useRef<(() => void) | null>(null);
   const askers = useRef<((r: CheckResult) => void)[]>([]);
   const resetFailures = useRef(false);
+  // Paused while SeeWalk is answering a question: no background snapshots go to Gemini, so the
+  // answer isn't competing with them. "What's ahead?" (checkNow) still works while paused.
+  const paused = useRef(false);
+  const setPaused = useCallback((on: boolean) => { paused.current = on; }, []);
 
   const keepAwake = useCallback(async () => {
     try { wakeLock.current = await navigator.wakeLock?.request("screen"); } catch { /* refused: fine */ }
@@ -394,6 +398,14 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
     while (alive()) {
       const roundStart = performance.now();
       if (resetFailures.current) { fails = 0; resetFailures.current = false; }
+      if (paused.current && askers.current.length === 0) {
+        await new Promise<void>((resolve) => {
+          const t = setTimeout(resolve, 250);
+          cutWaitShort.current = () => { clearTimeout(t); resolve(); };
+        });
+        cutWaitShort.current = null;
+        continue;
+      }
       const video = camera.videoRef.current;
       const frame = video && camera.isLive() ? captureFrame(video) : null;
       const blocked = !camera.isLive() || (frame !== null && looksCovered(frame));
@@ -463,8 +475,8 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
   }, [camera]);
 
   return useMemo(
-    () => ({ videoRef: camera.videoRef, start, stop, checkNow }),
-    [camera.videoRef, start, stop, checkNow],
+    () => ({ videoRef: camera.videoRef, start, stop, checkNow, setPaused }),
+    [camera.videoRef, start, stop, checkNow, setPaused],
   );
 }
 ```
@@ -638,11 +650,13 @@ interface Session { active: boolean; stop: () => void }
 
 /** onCommand: called with the recognised command (intent !== "none").
  *  onDebug (optional): reports what was heard, errors and state, for testing on the phone.
- *  getFrame (optional): the current camera frame (base64 JPEG), sent with each clip. */
+ *  getFrame (optional): the current camera frame (base64 JPEG), sent with each clip.
+ *  onChecking (optional): true while a clip is being checked by the server, false after. */
 export function createVoiceCommand(
   onCommand: (command: ListenResult) => void,
   onDebug?: (msg: string) => void,
   getFrame?: () => string | null,
+  onChecking?: (checking: boolean) => void,
 ) {
   const supported =
     typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia && typeof AudioContext !== "undefined";
@@ -658,6 +672,15 @@ export function createVoiceCommand(
   /** Tell the listener when SeeWalk is making sound (AudioEngine.onSounding). */
   function setSpeaking(on: boolean) {
     speaking = on;
+    if (on) clipperRef?.reset();
+    else quietSince = Date.now();
+  }
+
+  // Held while SeeWalk handles a question (from "command recognised" until the answer has been
+  // spoken): new speech is ignored so one question gets one answer, uninterrupted.
+  let held = false;
+  function hold(on: boolean) {
+    held = on;
     if (on) clipperRef?.reset();
     else quietSince = Date.now();
   }
@@ -701,6 +724,7 @@ export function createVoiceCommand(
     const clipper = new SpeechClipper(ctx.sampleRate, (clip) => {
       if (checking) { onDebug?.("speech ignored (still checking the last one)"); return; }
       checking = true;
+      onChecking?.(true);
       const seconds = (clip.length / ctx.sampleRate).toFixed(1);
       onDebug?.(`speech ${seconds} s → checking`);
       listen(toBase64(encodeWav(downsample(clip, ctx.sampleRate), TARGET_RATE)), lang, getFrame?.() ?? null)
@@ -713,13 +737,13 @@ export function createVoiceCommand(
           }
         })
         .catch((e: Error) => onDebug?.(`error: ${e.message}`))
-        .finally(() => { checking = false; });
+        .finally(() => { checking = false; onChecking?.(false); });
     });
 
     clipperRef = clipper;
     proc.onaudioprocess = (e) => {
       if (!s.active) return;
-      if (speaking || Date.now() - quietSince < ECHO_TAIL_MS) { clipper.reset(); return; }
+      if (held || speaking || Date.now() - quietSince < ECHO_TAIL_MS) { clipper.reset(); return; }
       clipper.push(new Float32Array(e.inputBuffer.getChannelData(0)));
     };
     source.connect(proc);
@@ -733,7 +757,7 @@ export function createVoiceCommand(
     session = null;
   }
 
-  return { supported, start, stop, setSpeaking };
+  return { supported, start, stop, setSpeaking, hold };
 }
 ```
 
