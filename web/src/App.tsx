@@ -2,12 +2,12 @@ import './styles/App.css'
 import React, { useRef, useCallback, useState } from "react";
 import Webcam from "react-webcam";
 
-const deviceHeight = 720
-const deviceWidth = 1280
+const deviceWidth = 600
+const deviceHeight = 600
 
 const videoConstraints = {
-  width: 1280,
-  height: 720,
+  width: deviceWidth,
+  height: deviceHeight,
   facingMode: "user"
 };
 
@@ -15,41 +15,35 @@ const CustomWebcam = () => {
   const webcamRef = useRef(null);
   const [imgSrc, setImgSrc] = useState(null)
 
+  // setInterval(() => {
+  //   const imageSrc = webcamRef.current.getScreenshot();
+  //   console.log(imageSrc)
+  //   setImgSrc(null)
+  //   console.log("Hi")
+  // }, 1000)
+
   const capture = useCallback(() => {
     const imageSrc = webcamRef.current.getScreenshot();
     setImgSrc(imageSrc)
+    console.log(imageSrc)
   }, [webcamRef])
 
   return (
     <div className="container">
       {imgSrc ? (
         <img src={imgSrc} alt="webcam" />
-      ) : (
-        <Webcam height={600} width={600} ref={webcamRef} />
-      )}
-      <div className="btn-container">
-        <button onClick={capture}>Capture photo</button>
-      </div>
+      ) : <>
+        <Webcam videoConstraints={videoConstraints} ref={webcamRef} />
+        <button onClick={capture}>Capture</button>
+      </>}
     </div>
   );
 }
 
-const WebcamCapture = () => {
-  const webcamRef = useRef(null);
-  const [capturedImage, setCapturedImage] = useState(null);
-
-  // Capture function using the getScreenshot() ref method
-  const capturePhoto = useCallback(() => {
-    if (webcamRef.current) {
-      const imageSrc = Webcam.
-      setCapturedImage(imageSrc); // Base64 data string
-    }
-  }, [webcamRef]);
-};
 
 function App() {
   return (
-    <CustomWebcam/>
+    <CustomWebcam></CustomWebcam>
   );
 }
 
