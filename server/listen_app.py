@@ -9,11 +9,13 @@ import logging
 
 from fastapi import FastAPI
 
+from hazards import router as hazards_router
 from listen import router
 
 logging.basicConfig(level=logging.INFO)
 app = FastAPI(title="SeeWalk (stand-in: listen + fake analyze)")
 app.include_router(router)
+app.include_router(hazards_router)  # hazard map (needs DATABASE_URL)
 
 
 @app.get("/health")
