@@ -484,6 +484,7 @@ export function createVoiceCommand(onCommand: () => void) {
       if (active) setTimeout(() => { try { rec?.start(); } catch { /* already running */ } }, 300);
     };
     rec.onerror = (e: any) => {
+      if (e.error === "aborted") return; // we stopped it ourselves (Stop / language switch)
       console.warn("voice command:", e.error);
       if (e.error === "not-allowed" || e.error === "service-not-allowed") active = false; // mic refused: give up
     };
