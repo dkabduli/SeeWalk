@@ -2,6 +2,7 @@ import './styles/App.css'
 import { useRef, useCallback, useState } from "react";
 import Webcam from "react-webcam";
 import CameraLab from "./pages/CameraLab";
+import HazardMap from "./pages/HazardMap";
 
 const deviceWidth = 600
 const deviceHeight = 600
@@ -45,6 +46,7 @@ const CustomWebcam = () => {
 function App() {
   // Aroha's page is the app. Abdul's camera debug page lives at …/?lab for testing the camera piece.
   if (new URLSearchParams(window.location.search).has("lab")) return <CameraLab />;
+  if (new URLSearchParams(window.location.search).has("map")) return <HazardMap />;
   return (
     <CustomWebcam></CustomWebcam>
   );
