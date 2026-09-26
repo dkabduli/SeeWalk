@@ -351,9 +351,12 @@ export default function WalkMode() {
       </div>
 
       {walking && (
-        <section className={`alert ${shown?.level ?? "none"}${(shown?.text.length ?? 0) > 40 ? " long" : ""}`} aria-live="polite">
-          <span className="arrow" aria-hidden="true">{shown?.direction ? ARROW[shown.direction] : shown ? "•" : ""}</span>
-          <span className="text">{shown?.text ?? t.listening}</span>
+        <section
+          className={`alert ${shown?.level ?? "none"}${(shown?.text.length ?? 0) > 40 ? " long" : ""}${shown?.direction ? "" : " no-arrow"}`}
+          aria-live="polite"
+        >
+          {shown?.direction && <span className="arrow" aria-hidden="true">{ARROW[shown.direction]}</span>}
+          <span className="text">{shown?.text ?? t.introShort}</span>
         </section>
       )}
 

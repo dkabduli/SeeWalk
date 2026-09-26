@@ -110,13 +110,13 @@ export const strings: Record<Lang, Record<string, string>> = {
     crossRefusal: "I can't tell when it's safe to cross. Listen for traffic.",
   },
   fr: {
-    start: "Commencer", stop: "Arrêter", ahead: "Qu'y a-t-il devant ?", lang: "English",
+    start: "Commencer", stop: "Arrêter", ahead: "Qu'y a-t-il devant\u00a0?", lang: "English",
     walking: "En marche", idle: "Prêt", noConn: "Pas de connexion", blocked: "Caméra bloquée",
     tagline: "La canne blanche trouve le sol. SeeWalk trouve tout le reste.",
     step1: "Portez le téléphone sur la poitrine, caméra arrière vers l'avant.",
     step2: "Mettez des écouteurs ouverts ou à conduction osseuse.",
-    step3: "Touchez Commencer. Pour demander, dites « SeeWalk », puis votre question, ou touchez Qu'y a-t-il devant ?",
-    listening: "À l'écoute de « SeeWalk, … »",
+    step3: "Touchez Commencer. Pour demander, dites «\u00a0SeeWalk\u00a0», puis votre question, ou touchez Qu'y a-t-il devant\u00a0?",
+    listening: "À l'écoute de «\u00a0SeeWalk, …\u00a0»",
     quiet: "Rien à signaler",
     youCanSay: "Vous pouvez dire",
     listeningNow: "J'écoute…",
@@ -124,11 +124,11 @@ export const strings: Record<Lang, Record<string, string>> = {
     autoLabel: "Alertes automatiques (personnes, obstacles)",
     autoOn: "Oui",
     autoOff: "Non",
-    cmdAhead: "« SeeWalk, qu'y a-t-il devant ? »",
-    cmdHolding: "« SeeWalk, qu'est-ce que je tiens ? »",
-    cmdPath: "« SeeWalk, qu'est-ce qui bloque mon chemin ? »",
-    cmdRead: "« SeeWalk, lis ceci. »",
-    introShort: "Dites « SeeWalk », puis votre question",
+    cmdAhead: "«\u00a0SeeWalk, qu'y a-t-il devant\u00a0?\u00a0»",
+    cmdHolding: "«\u00a0SeeWalk, qu'est-ce que je tiens\u00a0?\u00a0»",
+    cmdPath: "«\u00a0SeeWalk, qu'est-ce qui bloque mon chemin\u00a0?\u00a0»",
+    cmdRead: "«\u00a0SeeWalk, lis ceci.\u00a0»",
+    introShort: "Dites «\u00a0SeeWalk\u00a0», puis votre question",
     crossRefusal: "Je ne peux pas dire quand traverser. Écoutez la circulation.",
   },
 };
@@ -693,9 +693,12 @@ export default function WalkMode() {
       </div>
 
       {walking && (
-        <section className={`alert ${shown?.level ?? "none"}${(shown?.text.length ?? 0) > 40 ? " long" : ""}`} aria-live="polite">
-          <span className="arrow" aria-hidden="true">{shown?.direction ? ARROW[shown.direction] : shown ? "•" : ""}</span>
-          <span className="text">{shown?.text ?? t.listening}</span>
+        <section
+          className={`alert ${shown?.level ?? "none"}${(shown?.text.length ?? 0) > 40 ? " long" : ""}${shown?.direction ? "" : " no-arrow"}`}
+          aria-live="polite"
+        >
+          {shown?.direction && <span className="arrow" aria-hidden="true">{ARROW[shown.direction]}</span>}
+          <span className="text">{shown?.text ?? t.introShort}</span>
         </section>
       )}
 

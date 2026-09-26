@@ -65,12 +65,18 @@
 }
 .walk.is-idle .viewfinder { min-height: 320px; }
 .walk .viewfinder video { width: 100%; height: 100%; object-fit: cover; display: block; }
-.walk .setup {            /* camera is off before Start, so the steps sit centred on black */
-  position: absolute; inset: 0; padding: 24px 20px;
-  display: flex; flex-direction: column; justify-content: center; gap: 22px;
+.walk .setup {            /* camera is off before Start, so the steps sit on black */
+  position: absolute; inset: 0; padding: 22px 20px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 20px;
   background: var(--bg);
 }
-.walk .tagline { margin: 0; font-size: clamp(24px, 6.6vw, 32px); font-weight: 800; line-height: 1.15; letter-spacing: -0.3px; }
+/* centred when it fits; when it doesn't (small iPhones), it starts at the top and scrolls */
+.walk .setup > :first-child { margin-top: auto; }
+.walk .setup > :last-child { margin-bottom: auto; }
+.walk .tagline {
+  margin: 0; font-size: clamp(22px, 6.4vw, 32px); font-weight: 800; line-height: 1.15; letter-spacing: -0.3px;
+  text-wrap: balance;
+}
 .walk .setup ol { margin: 0; padding: 0; list-style: none; counter-reset: step; display: grid; gap: 10px; }
 .walk .setup ol > li {
   counter-increment: step; display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: start;
@@ -90,18 +96,19 @@
   border-radius: 14px;
 }
 .walk .alert .arrow { font-size: 52px; font-weight: 800; line-height: 1; text-align: center; }
+.walk .alert.no-arrow { grid-template-columns: 1fr; padding-left: 18px; }
 .walk .alert { flex: none; }
 .walk .alert .text {
-  min-width: 0; overflow-wrap: anywhere;            /* grid children must be allowed to shrink */
+  min-width: 0; overflow-wrap: anywhere; text-wrap: balance; /* grid children must be allowed to shrink */
   font-size: clamp(26px, 7.4vw, 36px); font-weight: 800; line-height: 1.12; letter-spacing: -0.3px;
 }
-.walk .alert.long { grid-template-columns: 40px 1fr; }
+.walk .alert.long:not(.no-arrow) { grid-template-columns: 40px 1fr; }
 .walk .alert.long .arrow { font-size: 30px; }
 .walk .alert.long .text {                           /* "read this" answers: smaller, scroll if needed */
   font-size: 19px; font-weight: 700; line-height: 1.3; letter-spacing: 0;
   max-height: 7.8em; overflow-y: auto;
 }
-.walk .alert.none .text { font-size: 18px; font-weight: 500; color: var(--muted); }
+.walk .alert.none .text { font-size: 18px; font-weight: 600; color: var(--muted); text-wrap: pretty; }
 .walk .alert.urgent  { border-left-color: var(--red); }
 .walk .alert.urgent .arrow { color: var(--red); }
 .walk .alert.warning { border-left-color: var(--amber); }
@@ -114,10 +121,10 @@
   min-height: 84px; border-radius: 16px; background: var(--white); color: var(--bg);
   font-size: 28px; font-weight: 800; letter-spacing: -0.2px;
 }
-.walk .controls { flex: none; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.walk .controls { flex: none; display: grid; grid-template-columns: 1.35fr 1fr; gap: 10px; }
 .walk .ahead {
-  min-height: 60px; border-radius: 14px; background: var(--white); color: var(--bg);
-  font-size: 19px; font-weight: 800;
+  min-height: 60px; padding: 6px 10px; border-radius: 14px; background: var(--white); color: var(--bg);
+  font-size: 18px; font-weight: 800; line-height: 1.15; text-wrap: balance;
 }
 .walk .stop {
   min-height: 60px; border-radius: 14px; background: transparent; color: var(--red);
@@ -163,3 +170,12 @@
   .walk .working.thinking .wave i { animation-duration: 0.6s; }
 }
 @keyframes walk-wave { 0%, 100% { height: 6px; } 50% { height: 22px; } }
+
+/* Small iPhones (SE): a bit tighter so the setup fits without scrolling where possible */
+@media (max-height: 700px) {
+  .walk .setup { padding: 18px 16px; gap: 14px; }
+  .walk .setup li, .walk .phrases li { font-size: 15px; }
+  .walk .phrases { gap: 6px; padding-top: 10px; }
+  .walk .setting { padding-top: 10px; }
+  .walk .start { min-height: 72px; font-size: 24px; }
+}
