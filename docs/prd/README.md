@@ -70,6 +70,10 @@ Errors: `503` means Gemini failed or timed out. The phone skips that snapshot an
 
 Request: `{ "text": "Person ahead, left", "lang": "en" }` → Response `200` `audio/mpeg` (River's voice). `503` if ElevenLabs failed; the phone falls back to a bundled clip.
 
+### `POST /listen` (voice command)
+
+Request: `{ "audio": "<base64 16 kHz mono WAV>", "lang": "en" }` → Response `200` `{ "heard": "SeeWalk, what's ahead?", "command": true }`. `503` if Gemini failed. Lives in `server/listen.py` (a router `main.py` includes).
+
 ### `GET /health` → `{ "ok": true }`
 
 ### Phone-side events (Abdul → Jibril)

@@ -30,6 +30,7 @@ You also handle keys, billing and merging PRs.
 | "What's ahead?" trigger | **Voice command** (your code) + **tap anywhere on the lower half of the screen** (Jibril's UI). Real Siri can't control a web app; that would need a native iOS app |
 | "What's ahead?" while the loop runs | **Fastest answer**: if a snapshot is already on its way to Gemini, answer with that one (~0.1–1.3 s); if the loop is waiting, skip the wait and take one now. Still one request at a time |
 | Voice trigger phrase | **"SeeWalk, what's ahead?"** (FR: "SeeWalk, qu'y a-t-il devant ?"). The wake word prevents false triggers |
+| How we hear it | **Our own mic capture + Gemini**, not Safari's speech recognition. On Abdul's iPhone Safari's recognizer fails instantly with `service-not-allowed` even with Siri and Dictation on. The phone cuts out speech clips and sends them to `POST /listen` (Gemini, ~1.5 s). About 2.5–3 s from the end of the sentence to the answer |
 | "What's ahead?" finds nothing | Say **"Nothing detected"** / "Rien de détecté" (never "clear" or "safe"). Jibril plays the `nothing_detected` clip |
 | Snapshot interval | **1.5 s** for filming (billing on), 5 s during development |
 | Skip blurry / unchanged frames? | **No.** Send every snapshot; keep it simple |
@@ -91,6 +92,12 @@ export interface SceneResult {
 }
 
 export type SystemEvent = "no_connection" | "connection_back" | "camera_blocked";
+
+/** POST /listen: what the mic heard, and whether it was "SeeWalk, what's ahead?" */
+export interface ListenResult {
+  heard: string;
+  command: boolean;
+}
 ```
 
 **Push this within the first hour Saturday** so Jibril codes against the same shapes.
@@ -98,7 +105,7 @@ export type SystemEvent = "no_connection" | "connection_back" | "camera_blocked"
 ### Step 2: `web/src/api/client.ts`
 
 ```ts
-import type { Lang, SceneResult } from "./types";
+import type { Lang, ListenResult, SceneResult } from "./types";
 import { mockAnalyze } from "./mock";
 
 const BASE = "/api"; // Vite proxies /api → http://localhost:8000
@@ -135,6 +142,24 @@ export async function tts(text: string, lang: Lang): Promise<ArrayBuffer> {
     });
     if (!r.ok) throw new Error(`tts ${r.status}`);
     return await r.arrayBuffer();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Voice command: send a short speech clip (base64 WAV). Never mocked: needs the server. */
+export async function listen(audio: string, lang: Lang): Promise<ListenResult> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 6000);
+  try {
+    const r = await fetch(`${BASE}/listen`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ audio, lang }),
+      signal: ctrl.signal,
+    });
+    if (!r.ok) throw new Error(`listen ${r.status}`);
+    return await r.json();
   } finally {
     clearTimeout(timer);
   }
@@ -450,68 +475,223 @@ Rules baked in:
 
 ### Step 7: `web/src/camera/voiceCommand.ts` ("SeeWalk, what's ahead?" out loud)
 
-Uses Safari's built-in speech recognition (the same engine as iPhone dictation).
+Safari's built-in speech recognition (`webkitSpeechRecognition`) was the first plan, but on Abdul's iPhone it fails instantly with `service-not-allowed`, with Siri, Dictation and Screen Time all correct. So we listen ourselves:
+
+1. `getUserMedia({ audio })`: the same permission system as the camera.
+2. `SpeechClipper` watches the loudness and cuts out **only the moments someone is speaking** (with 0.4 s of lead-in, ended by 0.7 s of quiet, max 4 s). Silence and short bangs are never sent.
+3. Each clip → 16 kHz WAV → `POST /listen` → **Gemini transcribes it and decides** if it was "SeeWalk, what's ahead?" (EN or FR). One clip at a time; 3 s debounce.
+4. Same interface as before (`createVoiceCommand(onCommand, onDebug?)` → `start(lang)`, `stop()`, `supported`), so Jibril's wiring doesn't change.
+
+Verified: unit tests (clip cutting, WAV format, the whole flow with a fake mic); real speech through this exact code to the real server: "SeeWalk, what's ahead?" → command in 1.8 s, unrelated talk → ignored.
 
 ```ts
+import { listen } from "../api/client";
 import type { Lang } from "../api/types";
 
-// Wake phrase: "SeeWalk, what's ahead?" (FR: "SeeWalk, qu'y a-t-il devant ?").
-// The wake word means nearby conversations and SeeWalk's own alerts leaking out of open-ear
-// headphones can never trigger it. Dictation often splits or mishears "SeeWalk", so accept those.
-const WAKE = ["seewalk", "see walk", "sea walk", "seawalk", "see-walk", "c walk", "si walk"];
-const ASK: Record<Lang, string[]> = {
-  en: ["ahead", "front"],
-  fr: ["devant"],
-};
+// "SeeWalk, what's ahead?" without Safari's speech recognition (iOS answers `service-not-allowed`
+// on some iPhones). We capture the mic ourselves, cut out the moments someone is speaking, and
+// send each clip to POST /listen, where Gemini decides whether it was the command (~1.5 s).
+// Silence is never sent.
 
-/** onDebug (optional): reports what was heard, errors and restarts, for testing on the phone. */
+const TARGET_RATE = 16000;   // what we send: 16 kHz mono WAV (~32 KB per second)
+const PRE_ROLL_S = 0.4;      // keep a little audio from before the speech started ("See…")
+const MAX_CLIP_S = 4;        // longest clip we send
+const END_SILENCE_S = 0.7;   // this much quiet ends a clip
+const MIN_SPEECH_S = 0.35;   // shorter bursts (a cough, a door) are ignored
+
+/** Splits a live mic signal into speech clips using its loudness (voice activity detection).
+ *  Pure logic, so it's unit-tested without a microphone. */
+export class SpeechClipper {
+  private floor = 0.005; // running estimate of background noise
+  private pre: Float32Array[] = [];
+  private preLen = 0;
+  private rec: Float32Array[] | null = null;
+  private recLen = 0;
+  private loudLen = 0;
+  private quietLen = 0;
+  private readonly rate: number;
+  private readonly onClip: (clip: Float32Array) => void;
+
+  constructor(rate: number, onClip: (clip: Float32Array) => void) {
+    this.rate = rate;
+    this.onClip = onClip;
+  }
+
+  push(buf: Float32Array) {
+    let sum = 0;
+    for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+    const rms = Math.sqrt(sum / buf.length);
+    const loud = rms > Math.max(this.floor * 3, 0.01);
+
+    if (!this.rec) {
+      if (!loud) this.floor = this.floor * 0.95 + rms * 0.05;
+      this.pre.push(buf);
+      this.preLen += buf.length;
+      while (this.pre.length > 1 && this.preLen - this.pre[0].length >= PRE_ROLL_S * this.rate) {
+        this.preLen -= this.pre.shift()!.length;
+      }
+      if (loud) {
+        this.rec = this.pre;
+        this.recLen = this.preLen;
+        this.pre = [];
+        this.preLen = 0;
+        this.loudLen = buf.length;
+        this.quietLen = 0;
+      }
+      return;
+    }
+
+    this.rec.push(buf);
+    this.recLen += buf.length;
+    if (loud) {
+      this.loudLen += buf.length;
+      this.quietLen = 0;
+    } else {
+      this.quietLen += buf.length;
+    }
+    if (this.quietLen >= END_SILENCE_S * this.rate || this.recLen >= MAX_CLIP_S * this.rate) {
+      const enough = this.loudLen >= MIN_SPEECH_S * this.rate;
+      const clip = concat(this.rec, this.recLen);
+      this.rec = null;
+      this.recLen = 0;
+      this.loudLen = 0;
+      this.quietLen = 0;
+      if (enough) this.onClip(clip);
+    }
+  }
+}
+
+function concat(parts: Float32Array[], length: number): Float32Array {
+  const out = new Float32Array(length);
+  let offset = 0;
+  for (const p of parts) { out.set(p, offset); offset += p.length; }
+  return out;
+}
+
+/** Average-and-drop resampling (e.g. the iPhone's 48 kHz → 16 kHz). Good enough for speech. */
+export function downsample(input: Float32Array, inRate: number, outRate = TARGET_RATE): Float32Array {
+  if (inRate === outRate) return input;
+  const ratio = inRate / outRate;
+  const out = new Float32Array(Math.floor(input.length / ratio));
+  for (let i = 0; i < out.length; i++) {
+    const start = Math.floor(i * ratio);
+    const end = Math.min(input.length, Math.floor((i + 1) * ratio));
+    let sum = 0;
+    for (let j = start; j < end; j++) sum += input[j];
+    out[i] = sum / Math.max(1, end - start);
+  }
+  return out;
+}
+
+/** 16-bit PCM mono WAV file. */
+export function encodeWav(samples: Float32Array, rate: number): Uint8Array {
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const v = new DataView(buffer);
+  const text = (offset: number, s: string) => { for (let i = 0; i < s.length; i++) v.setUint8(offset + i, s.charCodeAt(i)); };
+  text(0, "RIFF");
+  v.setUint32(4, 36 + samples.length * 2, true);
+  text(8, "WAVE");
+  text(12, "fmt ");
+  v.setUint32(16, 16, true);      // fmt chunk size
+  v.setUint16(20, 1, true);       // PCM
+  v.setUint16(22, 1, true);       // mono
+  v.setUint32(24, rate, true);
+  v.setUint32(28, rate * 2, true); // bytes per second
+  v.setUint16(32, 2, true);       // block align
+  v.setUint16(34, 16, true);      // bits per sample
+  text(36, "data");
+  v.setUint32(40, samples.length * 2, true);
+  for (let i = 0; i < samples.length; i++) {
+    const x = Math.max(-1, Math.min(1, samples[i]));
+    v.setInt16(44 + i * 2, x < 0 ? x * 0x8000 : x * 0x7fff, true);
+  }
+  return new Uint8Array(buffer);
+}
+
+export function toBase64(bytes: Uint8Array): string {
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
+interface Session { active: boolean; stop: () => void }
+
+/** onDebug (optional): reports what was heard, errors and state, for testing on the phone. */
 export function createVoiceCommand(onCommand: () => void, onDebug?: (msg: string) => void) {
-  const Recognition =
-    (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
-  let rec: any = null;
-  let active = false;
+  const supported =
+    typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia && typeof AudioContext !== "undefined";
+  let session: Session | null = null;
   let lastFired = 0;
 
+  /** Call inside a tap: iOS only lets the audio context start from a user gesture. */
   function start(lang: Lang): boolean {
-    if (!Recognition) return false;
+    if (!supported) return false;
     stop();
-    active = true;
-    rec = new Recognition();
-    rec.lang = lang === "fr" ? "fr-CA" : "en-CA";
-    rec.continuous = true;
-    rec.interimResults = false;
-    rec.onresult = (e: any) => {
-      const text = e.results[e.results.length - 1][0].transcript.toLowerCase().replace(/[’`]/g, "'");
-      const hit = WAKE.some((w) => text.includes(w)) && ASK[lang].some((w) => text.includes(w));
-      onDebug?.(`heard "${text}"${hit ? " → trigger" : ""}`);
-      if (hit && Date.now() - lastFired > 3000) { // one question → one answer
-        lastFired = Date.now();
-        onCommand();
-      }
-    };
-    // iOS stops listening after silence or after we play audio: restart it
-    rec.onend = () => {
-      onDebug?.(active ? "ended, restarting" : "ended");
-      if (active) setTimeout(() => { try { rec?.start(); } catch { /* already running */ } }, 300);
-    };
-    rec.onstart = () => onDebug?.("listening");
-    rec.onerror = (e: any) => {
-      if (e.error === "aborted") return; // we stopped it ourselves (Stop / language switch)
-      console.warn("voice command:", e.error);
-      onDebug?.(`error: ${e.error}`);
-      if (e.error === "not-allowed" || e.error === "service-not-allowed") active = false; // mic refused: give up
-    };
-    rec.start();
+    const ctx = new AudioContext();
+    void ctx.resume().catch(() => {});
+    const s: Session = { active: true, stop: () => { s.active = false; void ctx.close().catch(() => {}); } };
+    session = s;
+    void run(s, ctx, lang);
     return true;
   }
 
-  function stop() {
-    active = false;
-    rec?.abort();
-    rec = null;
+  async function run(s: Session, ctx: AudioContext, lang: Lang) {
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        video: false,
+      });
+    } catch (e) {
+      onDebug?.(`error: microphone ${(e as Error).name}`);
+      return;
+    }
+    const source = ctx.createMediaStreamSource(stream);
+    const proc = ctx.createScriptProcessor(4096, 1, 1);
+    const cleanup = () => {
+      proc.onaudioprocess = null;
+      source.disconnect();
+      proc.disconnect();
+      stream.getTracks().forEach((t) => t.stop());
+      void ctx.close().catch(() => {});
+    };
+    if (!s.active) { cleanup(); return; } // stopped while the permission prompt was open
+    s.stop = () => { s.active = false; cleanup(); };
+
+    let checking = false; // one clip at a time
+    const clipper = new SpeechClipper(ctx.sampleRate, (clip) => {
+      if (checking) { onDebug?.("speech ignored (still checking the last one)"); return; }
+      checking = true;
+      const seconds = (clip.length / ctx.sampleRate).toFixed(1);
+      onDebug?.(`speech ${seconds} s → checking`);
+      listen(toBase64(encodeWav(downsample(clip, ctx.sampleRate), TARGET_RATE)), lang)
+        .then((r) => {
+          if (!s.active) return;
+          onDebug?.(`heard "${r.heard}"${r.command ? " → trigger" : ""}`);
+          if (r.command && Date.now() - lastFired > 3000) { // one question → one answer
+            lastFired = Date.now();
+            onCommand();
+          }
+        })
+        .catch((e: Error) => onDebug?.(`error: ${e.message}`))
+        .finally(() => { checking = false; });
+    });
+
+    proc.onaudioprocess = (e) => {
+      if (s.active) clipper.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+    };
+    source.connect(proc);
+    proc.connect(ctx.destination); // Safari only runs the processor when it's connected; it outputs silence
+    await ctx.resume().catch(() => {});
+    onDebug?.(`listening (${ctx.state}, ${ctx.sampleRate} Hz)`);
   }
 
-  return { supported: !!Recognition, start, stop };
+  function stop() {
+    session?.stop();
+    session = null;
+  }
+
+  return { supported, start, stop };
 }
 ```
 
@@ -526,9 +706,9 @@ const getVoice = () => (voiceRef.current ??= createVoiceCommand(() => whatsAhead
 // on language switch while walking:                 getVoice().start(next);
 ```
 
-**This is the riskiest piece. Test it on the iPhone early (Saturday morning), before building on it.** Check:
-1. The first `start()` shows a microphone permission prompt; allow it. Siri & Dictation must be enabled on the iPhone.
-2. Say "SeeWalk, what's ahead?" → `onCommand` fires (log it).
+**Needs `POST /listen` on the server** (`server/listen.py`; until Aroha's `main.py` exists, run `cd server && .venv/bin/uvicorn listen_app:app --port 8000`). **Test it on the iPhone before building on it.** Check:
+1. The first `start()` shows a microphone permission prompt; allow it.
+2. Say "SeeWalk, what's ahead?" → the log shows `speech … → checking`, then `heard "…" → trigger`.
 3. **With the Bluetooth headphones connected**, check that SeeWalk's voice still sounds normal. When a web page uses the mic, iOS may switch Bluetooth headphones into "call mode" (lower-quality audio), or route the mic through the headset.
 4. It keeps working after SeeWalk speaks, and after ~1 minute of silence.
 
@@ -591,7 +771,8 @@ If 3 or 4 fails badly, **ship tap-anywhere only** and tell Jibril to hide the vo
 | Everything is slow / 503s | Free-tier limits; use `VITE_FRAME_INTERVAL_MS=5000` until billing is on |
 | Hear "No connection" while Wi-Fi is fine | The server returns 503 when Gemini **rate-limits** (free tier) too. Check Aroha's server log; slow the interval or turn billing on |
 | Voice replies play quietly from the earpiece (no headphones) | iOS routes audio to the earpiece while the mic is active. Test with and without headphones; if it's bad, turn the voice command off |
-| Voice command never fires | `service-not-allowed` (seen on Abdul's iPhone) = Siri or Dictation off, or restricted in Screen Time. Also check mic permission, and `onerror` in the console |
+| Voice command never fires | Check the lab log: no `speech …` lines = mic too quiet or permission denied; `error: listen 503` = server/Gemini problem (start `listen_app` / check the server log); `heard "…"` without trigger = Gemini didn't hear the wake word. Set `SEEWALK_SAVE_AUDIO=/tmp/last.wav` on the server to listen to the last clip |
+| Why not Safari's speech recognition? | On Abdul's iPhone it returns `service-not-allowed` instantly, even with Siri and Dictation on |
 | Headphone audio goes muffled when the mic is on | iOS "call mode". Turn the voice command off; tap-anywhere still works |
 | "Camera blocked" at dusk | Out of scope (daylight only). Film before ~6:45 PM |
 | Phone gets hot | Expected with camera + network + mic; take breaks between takes |

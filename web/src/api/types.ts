@@ -21,3 +21,9 @@ export interface SceneResult {
 }
 
 export type SystemEvent = "no_connection" | "connection_back" | "camera_blocked";
+
+/** POST /listen: what the mic heard, and whether it was "SeeWalk, what's ahead?" */
+export interface ListenResult {
+  heard: string;
+  command: boolean;
+}
