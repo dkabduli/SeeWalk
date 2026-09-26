@@ -3,12 +3,10 @@ import { useRef, useCallback, useState } from "react";
 import Webcam from "react-webcam";
 import CameraLab from "./pages/CameraLab";
 
-const deviceWidth = 600
-const deviceHeight = 600
-
+// Ask for full HD; the browser falls back to the best the camera can do
 const videoConstraints = {
-  width: deviceWidth,
-  height: deviceHeight,
+  width: { ideal: 1920 },
+  height: { ideal: 1080 },
   facingMode: "user"
 };
 
@@ -30,14 +28,21 @@ const CustomWebcam = () => {
   }, [webcamRef])
 
   return (
-    <div className="container">
+    <main className="container">
+      <h1>SeeWalk</h1>
       {imgSrc ? (
-        <img src={imgSrc} alt="webcam" />
+        <img className="preview" src={imgSrc} alt="webcam" />
       ) : <>
-        <Webcam videoConstraints={videoConstraints} ref={webcamRef} />
-        <button onClick={capture}>Capture</button>
+        <Webcam
+          className="preview"
+          videoConstraints={videoConstraints}
+          ref={webcamRef}
+          forceScreenshotSourceSize
+          screenshotQuality={0.95}
+        />
+        <button className="capture" onClick={capture}>Capture</button>
       </>}
-    </div>
+    </main>
   );
 }
 
