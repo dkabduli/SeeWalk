@@ -1,11 +1,12 @@
 import type { Lang } from "../api/types";
 
-// Each trigger lists words that must ALL appear. SeeWalk's own phrases (spoken by Gemini's
-// "phrase" field, which can be free-form) leak out of open-ear headphones, so the triggers use
-// question words our alerts never contain: "what" in English, "qu'y a" / "qu'est-ce" / "quoi" in French.
-const TRIGGERS: Record<Lang, string[][]> = {
-  en: [["what", "ahead"], ["what", "front"]],
-  fr: [["qu'y a", "devant"], ["qu'est-ce", "devant"], ["quoi", "devant"]],
+// Wake phrase: "SeeWalk, what's ahead?" (FR: "SeeWalk, qu'y a-t-il devant ?").
+// The wake word means nearby conversations and SeeWalk's own alerts leaking out of open-ear
+// headphones can never trigger it. Dictation often splits or mishears "SeeWalk", so accept those.
+const WAKE = ["seewalk", "see walk", "sea walk", "seawalk", "see-walk", "c walk", "si walk"];
+const ASK: Record<Lang, string[]> = {
+  en: ["ahead", "front"],
+  fr: ["devant"],
 };
 
 /** onDebug (optional): reports what was heard, errors and restarts, for testing on the phone. */
@@ -26,7 +27,7 @@ export function createVoiceCommand(onCommand: () => void, onDebug?: (msg: string
     rec.interimResults = false;
     rec.onresult = (e: any) => {
       const text = e.results[e.results.length - 1][0].transcript.toLowerCase().replace(/[’`]/g, "'");
-      const hit = TRIGGERS[lang].some((words) => words.every((w) => text.includes(w)));
+      const hit = WAKE.some((w) => text.includes(w)) && ASK[lang].some((w) => text.includes(w));
       onDebug?.(`heard "${text}"${hit ? " → trigger" : ""}`);
       if (hit && Date.now() - lastFired > 3000) { // one question → one answer
         lastFired = Date.now();

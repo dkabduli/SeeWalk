@@ -220,7 +220,7 @@ Snapshot in → Gemini → hazards out (`/analyze`); phrase in → ElevenLabs �
 Turn the live iPhone camera into a steady stream of snapshots and report when things break.
 - [ ] `types.ts` + `client.ts` pushed early; a mock API for testing without the backend
 - [ ] `captureFrame` (768 px JPEG + brightness), `useCamera` (portrait, lanyard), `useWalkLoop` (one request in flight, 5 s timeout, previous frame included, `checkNow()` for "What's ahead?")
-- [ ] Hands-free **"What's ahead?" voice command** (Safari speech recognition); tested with Bluetooth headphones
+- [ ] Hands-free **"SeeWalk, what's ahead?" voice command** (Safari speech recognition); tested with Bluetooth headphones
 - [ ] Stretch: COCO-SSD fast layer
 - [ ] `no_connection` / `connection_back` / `camera_blocked` events; screen stays awake
 - [ ] Also: share keys privately, **enable Gemini billing before filming**, merge PRs

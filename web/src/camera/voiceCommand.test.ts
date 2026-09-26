@@ -32,21 +32,30 @@ afterEach(() => {
 });
 
 describe("createVoiceCommand", () => {
-  it("fires on 'What's ahead?' in English", () => {
+  it("fires on 'SeeWalk, what's ahead?' in English", () => {
     const cb = vi.fn();
     const voice = createVoiceCommand(cb);
     expect(voice.supported).toBe(true);
     voice.start("en");
     expect(last().lang).toBe("en-CA");
-    last().say("What's ahead?");
+    last().say("SeeWalk, what's ahead?");
     expect(cb).toHaveBeenCalledTimes(1);
   });
 
-  it("also fires on 'what is in front of me'", () => {
+  it("accepts the ways dictation spells 'SeeWalk'", () => {
+    for (const heard of ["see walk what's ahead", "Sea walk, what's ahead", "seawalk what is in front of me", "C walk what's ahead"]) {
+      const cb = vi.fn();
+      createVoiceCommand(cb).start("en");
+      last().say(heard);
+      expect(cb, heard).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("needs the wake word: plain 'What's ahead?' or conversation doesn't fire", () => {
     const cb = vi.fn();
     createVoiceCommand(cb).start("en");
-    last().say("what is in front of me");
-    expect(cb).toHaveBeenCalledTimes(1);
+    for (const heard of ["What's ahead?", "what is in front of me", "I walked ahead of them", "see you ahead"]) last().say(heard);
+    expect(cb).not.toHaveBeenCalled();
   });
 
   it("never fires on SeeWalk's own alerts leaking from open-ear headphones", () => {
@@ -58,14 +67,14 @@ describe("createVoiceCommand", () => {
     expect(cb).not.toHaveBeenCalled();
   });
 
-  it("French: fires on the question, including iOS curly apostrophes", () => {
+  it("French: fires on 'SeeWalk, qu'y a-t-il devant ?'", () => {
     const cb = vi.fn();
     createVoiceCommand(cb).start("fr");
     expect(last().lang).toBe("fr-CA");
-    last().say("Qu’y a-t-il devant ?");
+    last().say("SeeWalk, qu’y a-t-il devant ?");
     expect(cb).toHaveBeenCalledTimes(1);
     vi.advanceTimersByTime(3500);
-    last().say("Qu'est-ce qu'il y a devant");
+    last().say("see walk qu'est-ce qu'il y a devant");
     expect(cb).toHaveBeenCalledTimes(2);
   });
 
@@ -81,11 +90,11 @@ describe("createVoiceCommand", () => {
   it("one question → one answer (3 s debounce)", () => {
     const cb = vi.fn();
     createVoiceCommand(cb).start("en");
-    last().say("what's ahead");
-    last().say("what's ahead");
+    last().say("seewalk what's ahead");
+    last().say("seewalk what's ahead");
     expect(cb).toHaveBeenCalledTimes(1);
     vi.advanceTimersByTime(3100);
-    last().say("what's ahead");
+    last().say("seewalk what's ahead");
     expect(cb).toHaveBeenCalledTimes(2);
   });
 

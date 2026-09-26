@@ -7,7 +7,7 @@
 You own the **eyes and ears** of the app:
 - Turn the iPhone's live rear camera into a steady stream of **snapshots** and send each one to `/analyze`
 - Hand the results to Jibril's UI and **notice when something breaks** (no connection, camera blocked)
-- Let the walker ask **"What's ahead?" out loud**, without touching or seeing the screen
+- Let the walker ask **"SeeWalk, what's ahead?" out loud**, without touching or seeing the screen
 - Own the shared **TypeScript types and API client** everyone imports
 
 You also handle keys, billing and merging PRs.
@@ -29,7 +29,7 @@ You also handle keys, billing and merging PRs.
 | How the phone is worn | **Portrait, on a chest lanyard.** Snapshots come out 576×768 |
 | "What's ahead?" trigger | **Voice command** (your code) + **tap anywhere on the lower half of the screen** (Jibril's UI). Real Siri can't control a web app; that would need a native iOS app |
 | "What's ahead?" while the loop runs | **Fastest answer**: if a snapshot is already on its way to Gemini, answer with that one (~0.1–1.3 s); if the loop is waiting, skip the wait and take one now. Still one request at a time |
-| Voice trigger phrase | **"What's ahead?"** (FR: "Qu'y a-t-il devant ?"), no wake word |
+| Voice trigger phrase | **"SeeWalk, what's ahead?"** (FR: "SeeWalk, qu'y a-t-il devant ?"). The wake word prevents false triggers |
 | "What's ahead?" finds nothing | Say **"Nothing detected"** / "Rien de détecté" (never "clear" or "safe"). Jibril plays the `nothing_detected` clip |
 | Snapshot interval | **1.5 s** for filming (billing on), 5 s during development |
 | Skip blurry / unchanged frames? | **No.** Send every snapshot; keep it simple |
@@ -448,19 +448,20 @@ Rules baked in:
 - A "What's ahead?" result goes **only to the caller**, so it isn't spoken twice.
 - Coming back to Safari re-takes the wake lock and restarts the camera if iOS stopped it.
 
-### Step 7: `web/src/camera/voiceCommand.ts` ("What's ahead?" out loud)
+### Step 7: `web/src/camera/voiceCommand.ts` ("SeeWalk, what's ahead?" out loud)
 
 Uses Safari's built-in speech recognition (the same engine as iPhone dictation).
 
 ```ts
 import type { Lang } from "../api/types";
 
-// Each trigger lists words that must ALL appear. SeeWalk's own phrases (spoken by Gemini's
-// "phrase" field, which can be free-form) leak out of open-ear headphones, so the triggers use
-// question words our alerts never contain: "what" in English, "qu'y a" / "qu'est-ce" / "quoi" in French.
-const TRIGGERS: Record<Lang, string[][]> = {
-  en: [["what", "ahead"], ["what", "front"]],
-  fr: [["qu'y a", "devant"], ["qu'est-ce", "devant"], ["quoi", "devant"]],
+// Wake phrase: "SeeWalk, what's ahead?" (FR: "SeeWalk, qu'y a-t-il devant ?").
+// The wake word means nearby conversations and SeeWalk's own alerts leaking out of open-ear
+// headphones can never trigger it. Dictation often splits or mishears "SeeWalk", so accept those.
+const WAKE = ["seewalk", "see walk", "sea walk", "seawalk", "see-walk", "c walk", "si walk"];
+const ASK: Record<Lang, string[]> = {
+  en: ["ahead", "front"],
+  fr: ["devant"],
 };
 
 /** onDebug (optional): reports what was heard, errors and restarts, for testing on the phone. */
@@ -481,7 +482,7 @@ export function createVoiceCommand(onCommand: () => void, onDebug?: (msg: string
     rec.interimResults = false;
     rec.onresult = (e: any) => {
       const text = e.results[e.results.length - 1][0].transcript.toLowerCase().replace(/[’`]/g, "'");
-      const hit = TRIGGERS[lang].some((words) => words.every((w) => text.includes(w)));
+      const hit = WAKE.some((w) => text.includes(w)) && ASK[lang].some((w) => text.includes(w));
       onDebug?.(`heard "${text}"${hit ? " → trigger" : ""}`);
       if (hit && Date.now() - lastFired > 3000) { // one question → one answer
         lastFired = Date.now();
@@ -527,7 +528,7 @@ const getVoice = () => (voiceRef.current ??= createVoiceCommand(() => whatsAhead
 
 **This is the riskiest piece. Test it on the iPhone early (Saturday morning), before building on it.** Check:
 1. The first `start()` shows a microphone permission prompt; allow it. Siri & Dictation must be enabled on the iPhone.
-2. Say "What's ahead?" → `onCommand` fires (log it).
+2. Say "SeeWalk, what's ahead?" → `onCommand` fires (log it).
 3. **With the Bluetooth headphones connected**, check that SeeWalk's voice still sounds normal. When a web page uses the mic, iOS may switch Bluetooth headphones into "call mode" (lower-quality audio), or route the mic through the headset.
 4. It keeps working after SeeWalk speaks, and after ~1 minute of silence.
 
@@ -539,7 +540,7 @@ If 3 or 4 fails badly, **ship tap-anywhere only** and tell Jibril to hide the vo
 3. In the Mac's Web Inspector console you should see a `SceneResult` each interval (add a `console.log` in `onResult` while testing).
 4. **Airplane mode** → after 2 snapshots → `no_connection`. Off again → `connection_back`.
 5. Cover the lens with a finger → `camera_blocked`. **Log `brightness` and `contrast` while you do it** and adjust `looksCovered` so a finger triggers it but a plain wall, sky or road doesn't.
-6. Say "What's ahead?" and tap the lower half of the screen → an answer within ~1.5 s, even mid-interval.
+6. Say "SeeWalk, what's ahead?" and tap the lower half of the screen → an answer within ~1.5 s, even mid-interval.
 7. Tap Stop then Start quickly several times → the console shows only one request at a time.
 8. Deny camera permission once (Settings → Safari → Camera → Deny) → tapping Start says "Camera blocked" instead of doing nothing.
 9. Press the side button (screen off), wait 5 s, unlock → SeeWalk resumes on its own (camera + snapshots).
@@ -590,7 +591,7 @@ If 3 or 4 fails badly, **ship tap-anywhere only** and tell Jibril to hide the vo
 | Everything is slow / 503s | Free-tier limits; use `VITE_FRAME_INTERVAL_MS=5000` until billing is on |
 | Hear "No connection" while Wi-Fi is fine | The server returns 503 when Gemini **rate-limits** (free tier) too. Check Aroha's server log; slow the interval or turn billing on |
 | Voice replies play quietly from the earpiece (no headphones) | iOS routes audio to the earpiece while the mic is active. Test with and without headphones; if it's bad, turn the voice command off |
-| Voice command never fires | Siri & Dictation off, mic permission denied, or recognition stopped: check `onerror` in the console |
+| Voice command never fires | `service-not-allowed` (seen on Abdul's iPhone) = Siri or Dictation off, or restricted in Screen Time. Also check mic permission, and `onerror` in the console |
 | Headphone audio goes muffled when the mic is on | iOS "call mode". Turn the voice command off; tap-anywhere still works |
 | "Camera blocked" at dusk | Out of scope (daylight only). Film before ~6:45 PM |
 | Phone gets hot | Expected with camera + network + mic; take breaks between takes |

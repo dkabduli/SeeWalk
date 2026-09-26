@@ -6,7 +6,7 @@
 
 You own **everything the walker touches and hears**:
 - The **`web/` scaffold** everyone builds inside (**first thing Saturday**, everyone is waiting on it)
-- The **Walk Mode screen**: Start/Stop, EN/FR, big captions, and **"What's ahead?" as the whole lower half of the screen** (easy to hit without looking), plus Abdul's voice command wired in
+- The **Walk Mode screen**: Start/Stop, EN/FR, big captions, and **"What's ahead?" as the whole lower half of the screen** (easy to hit without looking), plus Abdul's voice command ("SeeWalk, what's ahead?") wired in
 - The **audio engine**: a tone in the correct ear, then River's voice
 - The **alert filter**: out of everything Gemini reports, decide what (if anything) to say
 
