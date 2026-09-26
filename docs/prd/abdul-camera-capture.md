@@ -732,7 +732,7 @@ const getVoice = () => (voiceRef.current ??= createVoiceCommand(() => whatsAhead
 // on language switch while walking:                 getVoice().start(next);
 ```
 
-**Needs `POST /listen` on the server** (`server/listen.py`; until Aroha's `main.py` exists, run `cd server && .venv/bin/uvicorn listen_app:app --port 8000`). **Test it on the iPhone before building on it.** Check:
+**Needs `POST /listen` on the server** (`server/listen.py`, included by `server/main.py`; run `cd server && .venv/bin/uvicorn main:app --port 8000`). **Test it on the iPhone before building on it.** Check:
 1. The first `start()` shows a microphone permission prompt; allow it.
 2. Say "SeeWalk, what's ahead?" → the log shows `speech … → checking`, then `heard "…" → trigger`.
 3. **With the Bluetooth headphones connected**, check that SeeWalk's voice still sounds normal. When a web page uses the mic, iOS may switch Bluetooth headphones into "call mode" (lower-quality audio), or route the mic through the headset.
@@ -797,7 +797,7 @@ If 3 or 4 fails badly, **ship tap-anywhere only** and tell Jibril to hide the vo
 | Everything is slow / 503s | Free-tier limits; use `VITE_FRAME_INTERVAL_MS=5000` until billing is on |
 | Hear "No connection" while Wi-Fi is fine | The server returns 503 when Gemini **rate-limits** (free tier) too. Check Aroha's server log; slow the interval or turn billing on |
 | Voice replies play quietly from the earpiece (no headphones) | iOS routes audio to the earpiece while the mic is active. Test with and without headphones; if it's bad, turn the voice command off |
-| Voice command never fires | Check the lab log: no `speech …` lines = mic too quiet or permission denied; `error: listen 503` = server/Gemini problem (start `listen_app` / check the server log); `heard "…"` without trigger = Gemini didn't hear the wake word. Set `SEEWALK_SAVE_AUDIO=/tmp/last.wav` on the server to listen to the last clip |
+| Voice command never fires | Check the lab log: no `speech …` lines = mic too quiet or permission denied; `error: listen 503` = server/Gemini problem (start `uvicorn main:app` / check the server log); `heard "…"` without trigger = Gemini didn't hear the wake word. Set `SEEWALK_SAVE_AUDIO=/tmp/last.wav` on the server to listen to the last clip |
 | Why not Safari's speech recognition? | On Abdul's iPhone it returns `service-not-allowed` instantly, even with Siri and Dictation on |
 | Headphone audio goes muffled when the mic is on | iOS "call mode". Turn the voice command off; tap-anywhere still works |
 | "Camera blocked" at dusk | Out of scope (daylight only). Film before ~6:45 PM |

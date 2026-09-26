@@ -1,7 +1,9 @@
 import type { Hazard, SceneResult } from "../api/types";
 
 const MIN_CONFIDENCE = 0.6;
-const REPEAT_MS = 5000;
+// How long before the same hazard + direction may be said again, by urgency. Information
+// (crosswalks, stop signs) repeats much less: standing at a corner it was said every ~5 s.
+const REPEAT_MS: Record<Hazard["urgency"], number> = { 1: 5000, 2: 8000, 3: 20000 };
 const DISTANCE_RANK = { close: 0, near: 1, far: 2 } as const;
 const lastSpoken = new Map<string, number>();
 
@@ -12,7 +14,7 @@ export function pickAlert(result: SceneResult, { ignoreRepeat = false } = {}): H
   const candidates = result.hazards.filter(
     (h) =>
       h.confidence >= MIN_CONFIDENCE &&
-      (ignoreRepeat || now - (lastSpoken.get(`${h.type}:${h.direction}`) ?? -Infinity) >= REPEAT_MS),
+      (ignoreRepeat || now - (lastSpoken.get(`${h.type}:${h.direction}`) ?? -Infinity) >= REPEAT_MS[h.urgency]),
   );
   if (candidates.length === 0) return null;
   candidates.sort(

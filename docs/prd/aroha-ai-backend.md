@@ -1,5 +1,7 @@
 # PRD: AI + Backend (Aroha)
 
+> **Status (Sept 26, 2:45 PM): built by Abdul from this PRD** so the team could film. `server/main.py` has `/analyze`, `/tts`, `/listen`, `/health`, plus Aroha's `/detect`. Eval on the 15 samples after one prompt-tuning round: off-path hydrants/poles ignored, parked bikes = obstacles, stop signs/crosswalks = info, median 1.66 s. **Aroha: next is more prompt tuning with new daytime samples** (`scripts/eval_samples.py`).
+
 > Read [the shared contract](README.md) first. Your endpoints must match it exactly.
 
 ## 1. Summary
@@ -63,7 +65,7 @@ class Hazard(BaseModel):
     type: HazardType
     direction: Literal["left", "ahead", "right"]
     distance: Literal["close", "near", "far"]
-    urgency: int = Field(ge=1, le=3, description="1 = urgent, 2 = warning, 3 = info")
+    urgency: int = Field(ge=1, le=3, description="1 = immediate danger within ~2 m, 2 = obstacle or surface problem in the path, 3 = information")
     confidence: float = Field(ge=0, le=1)
     approaching: bool = Field(description="True if it is moving toward the walker between the two frames")
     phrase: str = Field(description="At most 4 words, hazard then direction, in the requested language")
@@ -103,13 +105,22 @@ _client = genai.Client(api_key=config.GEMINI_API_KEY)
 LANGUAGE = {"en": "English", "fr": "French"}
 
 PROMPT = """You assist a blind pedestrian walking on a quiet street. The camera is chest-height, facing forward.
-Report ONLY things that matter for walking safely in the next ~10 metres: people or bikes coming toward the walker,
-cars in or entering the path, drop-offs, stairs, curbs, potholes, uneven pavement, obstacles in the path,
-head-height obstacles (branches, signs, mirrors), crosswalks, stop signs, construction.
-Ignore anything off the path, buildings, sky. Never guess: if it isn't clearly visible, leave it out.
+Report ONLY things that matter for walking safely in the next ~10 metres, IN THE WALKING PATH (the sidewalk or
+floor straight ahead, roughly the middle of the image). Leave out anything beside the path (hydrants or poles on
+the grass, signs at the edge, parked cars at the curb), buildings, sky.
+Types:
+- person / bike / car: ONLY if moving toward or across the walker's path. A parked bike, bike rack or parked car
+  that blocks the path is obstacle_in_path, never bike/car.
+- obstacle_in_path: anything standing in the path (bins, posts, chairs, closed doors including glass doors).
+- head_height_obstacle: branches, signs, mirrors at head height. curb_or_dropoff, stairs_down: edges and steps down.
+- crosswalk, stop_sign: only if clearly visible ahead. pothole, uneven_surface, construction.
+Urgency: 1 = immediate danger within ~2 m (a drop-off or stairs down, a head-height obstacle, something moving at
+the walker). 2 = obstacle or surface problem in the path. 3 = information (crosswalk, stop sign).
+Never guess: if it isn't clearly visible, leave it out. At most 3 hazards, most important first.
 If the image is too blurry or dark, set unclear=true. Never say anything is safe to cross.
 If a previous frame is given, use it only to judge whether things are approaching.
-Write each phrase in {language}, at most 4 words, hazard then direction (e.g. "Person ahead, left")."""
+Write each phrase in {language}, at most 4 words, naming the actual thing, then direction
+(e.g. "Bins ahead", "Glass door ahead", "Parked bike ahead", "Person on your left")."""
 
 
 async def analyze_frame(image_b64: str, lang: str = "en", prev_image_b64: str | None = None) -> SceneResult:
@@ -217,15 +228,29 @@ The cache matters: the same phrases ("Stop sign ahead") repeat constantly, and a
 ### Step 7: `server/main.py` (the API)
 
 ```python
+"""SeeWalk backend.
+
+    cd server && .venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+
+POST /analyze  snapshot (+ previous) → Gemini → hazards as JSON (SceneResult)
+POST /tts      phrase → ElevenLabs (River) → mp3
+POST /listen   speech clip → Gemini → was it "SeeWalk, what's ahead?"   (listen.py)
+POST /detect   Aroha's first endpoint: image → comma-separated object list (debugging)
+GET  /health
+"""
+import base64
 import logging
 import time
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
+from google import genai
+from google.genai import types
 
 import config
 from gemini import analyze_frame
+from listen import router as listen_router
 from schemas import AnalyzeRequest, SceneResult, TTSRequest
 from tts import synthesize
 
@@ -239,6 +264,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(listen_router)
 
 
 @app.get("/health")
@@ -254,7 +280,13 @@ async def analyze(req: AnalyzeRequest):
     except Exception as e:
         log.warning("analyze failed: %s: %s", type(e).__name__, e)
         raise HTTPException(status_code=503, detail="vision unavailable")
-    log.info("analyze %.0f ms, %d hazards", (time.perf_counter() - start) * 1000, len(result.hazards))
+    log.info(
+        "analyze %.0f ms, %d hazards%s %s",
+        (time.perf_counter() - start) * 1000,
+        len(result.hazards),
+        " (unclear)" if result.unclear else "",
+        [f"{h.phrase} {h.confidence:.2f}" for h in result.hazards],
+    )
     return result
 
 
@@ -268,20 +300,38 @@ async def tts(req: TTSRequest):
         raise HTTPException(status_code=503, detail="voice unavailable")
     log.info("tts %.0f ms %r", (time.perf_counter() - start) * 1000, req.text)
     return Response(content=audio, media_type="audio/mpeg")
+
+
+# ---- Aroha's /detect (kept for debugging; the app uses /analyze) ----
+_detect_client = genai.Client(api_key=config.GEMINI_API_KEY)
+
+
+@app.post("/detect")
+async def detect(data: dict):
+    image_data = data["image"].split(",")[1]
+    image_bytes = base64.b64decode(image_data)
+
+    response = await _detect_client.aio.models.generate_content(
+        model=config.GEMINI_MODEL,
+        contents=[
+            {
+                "inline_data": {
+                    "mime_type": "image/jpeg",
+                    "data": image_bytes,
+                }
+            },
+            "Identify all visible objects. Output ONLY a comma-separated list of object names. No sentences, no introduction, no explanation, no punctuation other than commas.",
+        ],
+        config=types.GenerateContentConfig(max_output_tokens=200),
+    )
+    return {"result": response.text}
 ```
 
 Never log the image itself: it's huge, and privacy matters (frames are processed and discarded).
 
-### Step 7b: Include the voice-command router
+### Step 7b: Voice-command router
 
-Abdul already wrote and tested `server/listen.py` (`POST /listen`: Gemini decides whether a speech clip was "SeeWalk, what's ahead?"). Add two lines to `main.py`:
-
-```python
-from listen import router as listen_router
-app.include_router(listen_router)
-```
-
-Then delete `server/listen_app.py` (the stand-in Abdul used for testing before `main.py` existed).
+`server/listen.py` (`POST /listen`) is included by `main.py` above (`app.include_router(listen_router)`).
 
 ### Step 8: Run and test
 

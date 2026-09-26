@@ -32,12 +32,25 @@ describe("pickAlert", () => {
     expect(pick?.type).toBe("bike");
   });
 
-  it("doesn't repeat the same hazard + direction within 5 s", () => {
-    expect(mod.pickAlert(scene(hz({})))).not.toBeNull();
+  it("urgent hazards may repeat after 5 s", () => {
+    expect(mod.pickAlert(scene(hz({ type: "stairs_down", urgency: 1 })))).not.toBeNull();
     vi.setSystemTime(4000);
-    expect(mod.pickAlert(scene(hz({})))).toBeNull();
+    expect(mod.pickAlert(scene(hz({ type: "stairs_down", urgency: 1 })))).toBeNull();
     vi.setSystemTime(5100);
-    expect(mod.pickAlert(scene(hz({})))).not.toBeNull();
+    expect(mod.pickAlert(scene(hz({ type: "stairs_down", urgency: 1 })))).not.toBeNull();
+  });
+
+  it("warnings wait 8 s, information (crosswalk, stop sign) 20 s", () => {
+    mod.pickAlert(scene(hz({ type: "pothole", urgency: 2 })));
+    mod.pickAlert(scene(hz({ urgency: 3 })));
+    vi.setSystemTime(7000);
+    expect(mod.pickAlert(scene(hz({ type: "pothole", urgency: 2 })))).toBeNull();
+    vi.setSystemTime(8100);
+    expect(mod.pickAlert(scene(hz({ type: "pothole", urgency: 2 })))).not.toBeNull();
+    vi.setSystemTime(19000);
+    expect(mod.pickAlert(scene(hz({ urgency: 3 })))).toBeNull();
+    vi.setSystemTime(20100);
+    expect(mod.pickAlert(scene(hz({ urgency: 3 })))).not.toBeNull();
   });
 
   it("same hazard in a new direction is new", () => {
@@ -48,7 +61,7 @@ describe("pickAlert", () => {
   it("'What's ahead?' (ignoreRepeat) answers even if just said, without muting it later", () => {
     mod.pickAlert(scene(hz({})));
     expect(mod.pickAlert(scene(hz({})), { ignoreRepeat: true })).not.toBeNull();
-    vi.setSystemTime(5100);
+    vi.setSystemTime(20100);
     expect(mod.pickAlert(scene(hz({})))).not.toBeNull(); // not pushed a minute into the future
   });
 

@@ -178,7 +178,7 @@ Silence must never mean "all clear" by accident.
 | **Gemini 3.5 Flash-Lite** (Interactions API, `google-genai` SDK) | Looks at each frame and returns hazards as JSON | `server/gemini.py` | ✅ key works, 1.2 s measured |
 | **ElevenLabs Flash v2.5** | Speaks each alert live in River's voice (EN/FR) | `server/tts.py` | ✅ key works, 0.2 s measured |
 | **ElevenLabs Multilingual v2** | Pre-made offline/system clips | `server/scripts/generate_clips.py` → `web/public/audio/` | ✅ 48 clips generated |
-| **FastAPI** (Python 3.12) | Backend: holds the keys, `/analyze`, `/tts`, `/health` | `server/main.py` | ⬜ next |
+| **FastAPI** (Python 3.12) | Backend: holds the keys, `/analyze`, `/tts`, `/listen`, `/health` | `server/main.py` | ✅ built, eval'd on 15 samples |
 | **React + Vite + TypeScript** | The phone web app | `web/` | ⬜ scaffold Saturday AM |
 | **getUserMedia + Canvas** | Camera feed and frame capture on the iPhone | `web/src/camera/` | ⬜ |
 | **Web Audio API** | Panned tones + playing speech | `web/src/audio/` | ⬜ |
