@@ -1,0 +1,64 @@
+/* Walk Mode, in Jibril's SeeWalk look (tokens from index.css): teal gradient, black 3D pills,
+   serif headline, chunky green 3D button. Built for a phone hanging in portrait on a lanyard:
+   everything big, nothing that needs reading except the caption (which is for the video). */
+.walk {
+  display: flex; flex-direction: column; gap: 14px;
+  min-height: 100dvh; max-width: 720px; margin: 0 auto;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+}
+.walk > * { animation: rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.walk > :nth-child(2) { animation-delay: 0.08s; }
+.walk > :nth-child(3) { animation-delay: 0.16s; }
+.walk > :nth-child(4) { animation-delay: 0.24s; }
+.walk > :nth-child(5) { animation-delay: 0.32s; }
+
+.walk header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.walk header h1 { margin-right: auto; }
+.walk .status {
+  background: var(--ink); color: #fff; font-weight: 800; font-size: 15px;
+  padding: 6px 14px; border-radius: 999px;
+}
+.walk .status.noConn, .walk .status.blocked { background: #d7263d; animation: blink 1.2s ease-in-out infinite; }
+.walk .mock-badge {
+  background: #d7263d; color: #fff; font-weight: 800; font-size: 13px; padding: 4px 12px; border-radius: 999px;
+}
+@keyframes blink { 50% { opacity: 0.45; } }
+
+.walk .preview {
+  width: 100%; height: 34dvh; min-height: 200px; object-fit: cover;
+  background: rgb(0 0 0 / 0.18); border: 3px solid var(--ink); border-radius: 28px;
+}
+
+/* What SeeWalk just said: big enough to read in the video */
+.walk .caption {
+  margin: 0; min-height: 2.6em; padding: 12px 18px;
+  background: var(--paper); border: 3px solid var(--ink); border-radius: 22px;
+  font-size: clamp(28px, 8vw, 40px); font-weight: 800; line-height: 1.15; text-align: center;
+  display: flex; align-items: center; justify-content: center;
+  animation: pop 0.25s ease-out both;
+}
+.walk .caption:empty::before { content: "…"; opacity: 0.25; }
+
+/* 3D buttons: a solid bottom edge that sinks when pressed */
+.walk .row { display: flex; gap: 12px; }
+.walk .row button {
+  border: 0; border-radius: 48px; font-weight: 800; min-height: 72px;
+  box-shadow: 0 8px 0 #000; transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.walk .row button:active { transform: translateY(8px); box-shadow: 0 0 0 #000; }
+.walk .row .primary {
+  flex: 2; background: var(--ink); color: #fff;
+  font-size: clamp(24px, 7vw, 32px); text-transform: uppercase; letter-spacing: 1px;
+}
+.walk .row .primary.on { background: #d7263d; box-shadow: 0 8px 0 #7a0f1d; }
+.walk .row .lang { flex: 1; background: var(--paper); color: var(--ink); font-size: 18px; border: 3px solid var(--ink); }
+
+/* The whole lower part of the screen: tap anywhere to ask "What's ahead?" */
+.walk .ahead-zone {
+  flex: 1; min-height: 24dvh; border: 3px solid var(--ink); border-radius: 36px;
+  background: var(--green); color: var(--ink);
+  font-family: "Fraunces", Georgia, serif; font-size: clamp(36px, 10vw, 56px); font-weight: 800;
+  box-shadow: 0 10px 0 var(--green-edge); transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.walk .ahead-zone:active:not(:disabled) { transform: translateY(10px); box-shadow: 0 0 0 var(--green-edge); }
+.walk .ahead-zone:disabled { opacity: 0.45; filter: grayscale(0.4); }

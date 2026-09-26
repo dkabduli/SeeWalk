@@ -208,7 +208,7 @@ export function pickAlert(result: SceneResult, { ignoreRepeat = false } = {}): H
   const candidates = result.hazards.filter(
     (h) =>
       h.confidence >= MIN_CONFIDENCE &&
-      (ignoreRepeat || now - (lastSpoken.get(`${h.type}:${h.direction}`) ?? 0) >= REPEAT_MS),
+      (ignoreRepeat || now - (lastSpoken.get(`${h.type}:${h.direction}`) ?? -Infinity) >= REPEAT_MS),
   );
   if (candidates.length === 0) return null;
   candidates.sort(
@@ -241,7 +241,7 @@ Quick sanity test: call `pickAlert` twice with the same fake result within 5 s. 
 ### Step 5: `web/src/pages/WalkMode.tsx` (the screen)
 
 ```tsx
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { tts } from "../api/client";
 import type { Hazard, Lang, SceneResult, SystemEvent } from "../api/types";
 import { audio } from "../audio/AudioEngine";
@@ -251,6 +251,7 @@ import { createVoiceCommand } from "../camera/voiceCommand";
 import { strings } from "../i18n/strings";
 import { MOCK } from "../api/client";
 import clips from "../audio/clips.json";
+import "../styles/walk.css";
 
 type ClipTable = Record<string, Record<Lang, string>>;
 
@@ -312,6 +313,30 @@ export default function WalkMode() {
   const walk = useWalkLoop({ lang, onResult, onSystem });
   const { videoRef } = walk;
 
+  // Fast layer (Abdul): on-device person/bike/car warnings into the same onResult.
+  // The model is downloaded as soon as this screen opens (it took ~19 s cold).
+  const langRef = useRef(lang);
+  const onResultRef = useRef(onResult);
+  useLayoutEffect(() => { langRef.current = lang; onResultRef.current = onResult; });
+  const fastStop = useRef<(() => void) | null>(null);
+  const fastGen = useRef(0);
+  useEffect(() => {
+    void import("../detection/fastLayer").then((m) => m.preloadFastLayer()).catch(() => {});
+  }, []);
+  async function startFast(gen: number) {
+    const video = videoRef.current;
+    for (let i = 0; i < 100 && video && !video.videoWidth; i++) await new Promise((r) => setTimeout(r, 100));
+    if (!video || fastGen.current !== gen) return;
+    try {
+      const { startFastLayer } = await import("../detection/fastLayer");
+      const stop = await startFastLayer(video, () => langRef.current, (r) => onResultRef.current(r));
+      if (fastGen.current !== gen) { stop(); return; } // Stop was tapped while the model loaded
+      fastStop.current = stop;
+    } catch (e) {
+      console.warn("fast layer unavailable", e); // optional: Gemini still works without it
+    }
+  }
+
   // Voice command "What's ahead?" (Abdul's code). The ref keeps the latest whatsAhead.
   const whatsAheadRef = useRef<() => void>(() => {});
   const voiceRef = useRef<ReturnType<typeof createVoiceCommand> | null>(null);
@@ -319,8 +344,14 @@ export default function WalkMode() {
 
   async function toggle() {
     if (walking) {
+      fastGen.current++;
+      fastStop.current?.();
+      fastStop.current = null;
       walk.stop();
       getVoice().stop();
+      speechId.current++;                        // cancel any alert still on its way
+      audio.stop();
+      setCaption("");
       setWalking(false);
       setStatus("idle");
       await audio.playClip(lang, "walk_stopped");
@@ -330,6 +361,7 @@ export default function WalkMode() {
     const unlocking = audio.unlock();
     getVoice().start(lang);                      // mic permission prompt on first use
     walk.start();                                // runs until Stop, don't await; camera prompt on first use
+    void startFast(++fastGen.current);
     setWalking(true);
     setStatus("walking");
     await unlocking;
@@ -378,13 +410,16 @@ export default function WalkMode() {
 
   return (
     <main className="walk">
+      <header>
+        <h1>SeeWalk</h1>
+        {MOCK && <span className="mock-badge">MOCK DATA</span>}
+        <span className={`status ${status}`} role="status">{t[status]}</span>
+      </header>
       <video ref={videoRef} playsInline muted autoPlay className="preview" aria-hidden="true" />
-      {MOCK && <p className="mock-badge">MOCK DATA</p>}
-      <p className="status" role="status">{t[status]}</p>
       <p className="caption" aria-live="polite">{caption}</p>
       <div className="row">
-        <button className="primary" onClick={toggle}>{walking ? t.stop : t.start}</button>
-        <button onClick={switchLang} lang={lang === "en" ? "fr" : "en"}>{t.lang}</button>
+        <button className={`primary${walking ? " on" : ""}`} onClick={toggle}>{walking ? t.stop : t.start}</button>
+        <button className="lang" onClick={switchLang} lang={lang === "en" ? "fr" : "en"}>{t.lang}</button>
       </div>
       {/* The whole lower half of the screen: tap anywhere to ask */}
       <button className="ahead-zone" onClick={whatsAhead} disabled={!walking}>{t.ahead}</button>
@@ -393,7 +428,7 @@ export default function WalkMode() {
 }
 ```
 
-Render it from `App.tsx` (`export default function App() { return <WalkMode />; }`).
+`App.tsx` renders `<WalkMode />` by default (Aroha's capture page is at `?capture`, the camera lab at `?lab`). **Built Sept 26 by Abdul from this PRD in Jibril's theme** (`web/src/styles/walk.css`), including the fast layer (Step 9) and voice command; verified in a browser: "Walk mode on", tones panned to the correct ear, clips, the fast layer, "What's ahead?", "Walk mode off".
 
 ### Step 6: Styling for sunlight + camera
 

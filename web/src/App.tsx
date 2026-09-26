@@ -2,6 +2,7 @@ import './styles/App.css'
 import { useRef, useCallback, useState } from "react";
 import Webcam from "react-webcam";
 import CameraLab from "./pages/CameraLab";
+import WalkMode from "./pages/WalkMode";
 
 // Ask for full HD; the browser falls back to the best the camera can do
 const videoConstraints = {
@@ -48,11 +49,11 @@ const CustomWebcam = () => {
 
 
 function App() {
-  // Aroha's page is the app. Abdul's camera debug page lives at …/?lab for testing the camera piece.
-  if (new URLSearchParams(window.location.search).has("lab")) return <CameraLab />;
-  return (
-    <CustomWebcam></CustomWebcam>
-  );
+  // Walk Mode is the app. Aroha's capture page is at …/?capture, Abdul's camera debug page at …/?lab.
+  const params = new URLSearchParams(window.location.search);
+  if (params.has("lab")) return <CameraLab />;
+  if (params.has("capture")) return <CustomWebcam></CustomWebcam>;
+  return <WalkMode />;
 }
 
 export default App
