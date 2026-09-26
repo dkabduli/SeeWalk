@@ -1,0 +1,68 @@
+/* Hazard map page (?map). Scoped under .hmap; same teal + Figtree look as the camera lab. */
+.hmap {
+  --teal: #5ec8bd;
+  --ink: #0b0b0b;
+  --paper: #fffdf8;
+  --muted: #5a5a5a;
+
+  position: fixed; inset: 0;
+  font: 15px/1.35 "Figtree", -apple-system, system-ui, sans-serif;
+  color: var(--ink); color-scheme: light; text-align: left;
+}
+.hmap * { box-sizing: border-box; }
+.hmap button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.hmap button:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+
+.hmap-map { position: absolute; inset: 0; background: #e8efe9; }
+
+.hmap-card {
+  position: absolute; z-index: 1000; /* above Leaflet panes */
+  left: max(12px, env(safe-area-inset-left)); right: max(12px, env(safe-area-inset-right));
+  max-width: 560px;
+  background: var(--paper); border: 2px solid var(--ink); border-radius: 18px;
+  box-shadow: 0 6px 0 var(--ink);
+  padding: 12px 14px;
+}
+
+.hmap-top { top: max(12px, env(safe-area-inset-top)); display: grid; gap: 10px; }
+.hmap-title h1 { margin: 0; font: 800 26px/1.05 "Fraunces", Georgia, serif; color: var(--ink); letter-spacing: normal; }
+.hmap-title p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+
+.hmap-range { display: flex; gap: 4px; padding: 3px; border-radius: 999px; background: #efece4; width: fit-content; }
+.hmap-range button { border: 0; background: none; padding: 6px 14px; border-radius: 999px; font-weight: 600; min-height: 36px; }
+.hmap-range button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+
+.hmap-legend { display: flex; flex-wrap: wrap; gap: 6px; }
+.hmap-legend button {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 36px;
+  padding: 4px 10px; border: 1.5px solid var(--ink); border-radius: 999px; background: #fff; font-size: 13px; font-weight: 600;
+}
+.hmap-legend button[aria-pressed="false"] { opacity: 0.4; text-decoration: line-through; }
+.hmap-legend .n { font-variant-numeric: tabular-nums; color: var(--muted); }
+
+.hmap .dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px var(--ink); flex: none; }
+
+.hmap-msg { margin: 0; padding: 8px 10px; border-radius: 10px; background: var(--teal); font-weight: 600; font-size: 14px; }
+
+.hmap-hot { bottom: max(12px, env(safe-area-inset-bottom)); right: max(64px, env(safe-area-inset-right)); max-height: 40vh; overflow-y: auto; }
+.hmap-hot h2 { margin: 0 0 6px; font: 800 15px/1.3 "Figtree", system-ui, sans-serif; color: var(--ink); letter-spacing: normal; }
+.hmap-hot ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; }
+.hmap-hot li button {
+  width: 100%; display: grid; grid-template-columns: auto 1fr; column-gap: 8px; align-items: center;
+  border: 0; background: none; padding: 6px 4px; border-radius: 10px; text-align: left; min-height: 44px;
+}
+.hmap-hot li button:hover { background: #efece4; }
+.hmap-hot .what { font-weight: 700; }
+.hmap-hot .meta { grid-column: 2; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+
+@media (min-width: 720px) {
+  .hmap-card { right: auto; width: 420px; }
+  .hmap-hot { right: auto; }
+}
+
+.hmap-test { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
+.hmap-test button {
+  min-height: 40px; padding: 6px 14px; border: 2px solid var(--ink); border-radius: 999px;
+  background: var(--teal); font-weight: 700; box-shadow: 0 3px 0 var(--ink);
+}
+.hmap-test button:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--ink); }

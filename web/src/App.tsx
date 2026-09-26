@@ -2,6 +2,7 @@ import './styles/App.css'
 import { useRef, useState, useEffect } from "react";
 import Webcam from "react-webcam";
 import CameraLab from "./pages/CameraLab";
+import HazardMap from "./pages/HazardMap";
 import WalkMode from "./pages/WalkMode";
 
 const deviceWidth = 600;
@@ -82,10 +83,12 @@ const CustomWebcam = () => {
 };
 
 function App() {
-  // Walk Mode is the app. Aroha's /detect webcam page is at …/?capture, Abdul's camera debug page at …/?lab.
+  // Walk Mode is the app. Aroha's /detect webcam page is at …/?capture, Abdul's camera debug page at …/?lab,
+  // the hazard map (Tiger Data) at …/?map.
   const params = new URLSearchParams(window.location.search);
   if (params.has("lab")) return <CameraLab />;
   if (params.has("capture")) return <CustomWebcam></CustomWebcam>;
+  if (params.has("map")) return <HazardMap />;
   return <WalkMode />;
 }
 

@@ -1,0 +1,12 @@
+# Never upload secrets or local environments
+**/.env
+**/.env.*
+!**/.env.example
+**/.venv
+**/__pycache__
+**/node_modules
+.claude
+web/dist
+web/lab-log.jsonl
+samples
+docs
