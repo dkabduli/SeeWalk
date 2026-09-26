@@ -40,7 +40,7 @@ You also handle keys, billing and merging PRs.
 ## 3. Depends on
 
 - **Jibril's `web/` scaffold** (first thing Saturday). Until it lands, prototype in a scratch Vite app.
-- **Siddig's HTTPS tunnel**: iPhone Safari only allows the camera and microphone on `https://`.
+- **An HTTPS tunnel**: iPhone Safari only allows the camera and microphone on `https://`. You don't have to wait for Siddig to test your own piece: run `brew install cloudflared && cloudflared tunnel --url http://localhost:5173` yourself with `VITE_MOCK_API=1`.
 - **Aroha's `/analyze`**: until it's up, use the mock (Step 3).
 
 ## 4. Setup
@@ -56,7 +56,7 @@ VITE_FRAME_INTERVAL_MS=5000
 VITE_MOCK_API=1
 ```
 - `VITE_FRAME_INTERVAL_MS`: `5000` during development (Gemini free tier), `1500` for filming.
-- `VITE_MOCK_API=1` until Aroha's server is up; delete the line after.
+- `VITE_MOCK_API=1` until Aroha's server is up; **delete the line after** (the console warns while it's on, and Jibril shows a "MOCK" badge, so fake results can't end up in the video).
 
 **One-time debugging setup (Mac + cable):**
 - iPhone: Settings → Apps → Safari → Advanced → **Web Inspector** on
@@ -102,7 +102,8 @@ import type { Lang, SceneResult } from "./types";
 import { mockAnalyze } from "./mock";
 
 const BASE = "/api"; // Vite proxies /api → http://localhost:8000
-const MOCK = import.meta.env.VITE_MOCK_API === "1";
+export const MOCK = import.meta.env.VITE_MOCK_API === "1";
+if (MOCK) console.warn("SeeWalk: MOCK API ON: results are fake. Remove VITE_MOCK_API before filming.");
 
 export async function analyze(
   image: string,
@@ -110,7 +111,7 @@ export async function analyze(
   lang: Lang,
   signal?: AbortSignal,
 ): Promise<SceneResult> {
-  if (MOCK) return mockAnalyze();
+  if (MOCK) return mockAnalyze(lang);
   const r = await fetch(`${BASE}/analyze`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -121,34 +122,49 @@ export async function analyze(
   return r.json();
 }
 
-export async function tts(text: string, lang: Lang, signal?: AbortSignal): Promise<ArrayBuffer> {
-  const r = await fetch(`${BASE}/tts`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ text, lang }),
-    signal,
-  });
-  if (!r.ok) throw new Error(`tts ${r.status}`);
-  return r.arrayBuffer();
+/** Live speech. Gives up after 2.5 s so a stale alert is never spoken late. */
+export async function tts(text: string, lang: Lang): Promise<ArrayBuffer> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 2500);
+  try {
+    const r = await fetch(`${BASE}/tts`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text, lang }),
+      signal: ctrl.signal,
+    });
+    if (!r.ok) throw new Error(`tts ${r.status}`);
+    return await r.arrayBuffer();
+  } finally {
+    clearTimeout(timer);
+  }
 }
 ```
 
 ### Step 3: `web/src/api/mock.ts` (fake backend)
 
 ```ts
-import type { SceneResult } from "./types";
+import type { Lang, SceneResult } from "./types";
 
-const samples: SceneResult[] = [
-  { hazards: [], unclear: false },
-  { hazards: [{ type: "stop_sign", direction: "ahead", distance: "near", urgency: 3, confidence: 0.93, approaching: false, phrase: "Stop sign ahead" }], unclear: false },
-  { hazards: [{ type: "car", direction: "right", distance: "near", urgency: 1, confidence: 0.91, approaching: true, phrase: "Car on your right" }], unclear: false },
-  { hazards: [], unclear: true },
-];
+const samples: Record<Lang, SceneResult[]> = {
+  en: [
+    { hazards: [], unclear: false },
+    { hazards: [{ type: "stop_sign", direction: "ahead", distance: "near", urgency: 3, confidence: 0.93, approaching: false, phrase: "Stop sign ahead" }], unclear: false },
+    { hazards: [{ type: "car", direction: "right", distance: "near", urgency: 1, confidence: 0.91, approaching: true, phrase: "Car on your right" }], unclear: false },
+    { hazards: [], unclear: true },
+  ],
+  fr: [
+    { hazards: [], unclear: false },
+    { hazards: [{ type: "stop_sign", direction: "ahead", distance: "near", urgency: 3, confidence: 0.93, approaching: false, phrase: "Panneau d'arrêt devant" }], unclear: false },
+    { hazards: [{ type: "car", direction: "right", distance: "near", urgency: 1, confidence: 0.91, approaching: true, phrase: "Voiture à droite" }], unclear: false },
+    { hazards: [], unclear: true },
+  ],
+};
 let i = 0;
 
-export async function mockAnalyze(): Promise<SceneResult> {
+export async function mockAnalyze(lang: Lang): Promise<SceneResult> {
   await new Promise((r) => setTimeout(r, 1200)); // pretend Gemini takes 1.2 s
-  return samples[i++ % samples.length];
+  return samples[lang][i++ % samples[lang].length];
 }
 ```
 
@@ -198,54 +214,59 @@ A 768 px JPEG at q0.7 is ~50–70 KB (same as the files in `samples/`), quick to
 ### Step 5: `web/src/camera/useCamera.ts`
 
 ```ts
-import { useCallback, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 
-export function useCamera(onBlocked: () => void) {
+export function useCamera(onEnded: () => void) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const onEndedRef = useRef(onEnded); onEndedRef.current = onEnded;
+
+  const stop = useCallback(() => {
+    streamRef.current?.getTracks().forEach((t) => t.stop()); // page-initiated stop never fires "ended"
+    streamRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
+  }, []);
 
   const start = useCallback(async () => {
+    stop(); // never leak an old stream (e.g. when restarting after the page was hidden)
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: { ideal: "environment" } }, // rear camera; iOS gives a portrait stream when held upright
       audio: false,
     });
     streamRef.current = stream;
-    const track = stream.getVideoTracks()[0];
-    track.addEventListener("ended", onBlocked); // camera stopped for good
-    track.addEventListener("mute", onBlocked);  // iOS pauses it (a call, Siri, another app took the camera)
-    const video = videoRef.current!;
+    stream.getVideoTracks()[0].addEventListener("ended", () => onEndedRef.current());
+    const video = videoRef.current;
+    if (!video) throw new Error("video element not mounted");
     video.srcObject = stream;
     await video.play();
-  }, [onBlocked]);
+  }, [stop]);
 
-  const stop = useCallback(() => {
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    streamRef.current = null;
-    if (videoRef.current) videoRef.current.srcObject = null;
+  /** True while the camera is actually delivering frames. iOS "mutes" the track during
+   *  interruptions (a call, Siri, the page being hidden) and unmutes it afterwards. */
+  const isLive = useCallback(() => {
+    const track = streamRef.current?.getVideoTracks()[0];
+    return !!track && track.readyState === "live" && !track.muted;
   }, []);
 
-  /** True while the camera is actually delivering frames. */
-  const isLive = useCallback(
-    () => streamRef.current?.getVideoTracks()[0]?.readyState === "live",
-    [],
-  );
-
-  return { videoRef, start, stop, isLive };
+  return useMemo(() => ({ videoRef, start, stop, isLive }), [start, stop, isLive]);
 }
 ```
 
 The `<video>` element (Jibril renders it, you pass the ref) **must** have `playsInline muted autoPlay`, or iOS opens it fullscreen or refuses to play.
 
+Why `mute` isn't treated as "blocked" straight away: iOS mutes the track briefly on every interruption and when you switch apps, then unmutes it. Announcing on every mute would say "Camera blocked" each time the walker comes back to Safari. Instead the loop counts **2 snapshots in a row** where the camera isn't live (Step 6).
+
 ### Step 6: `web/src/camera/useWalkLoop.ts` (the heart of your piece)
 
 ```ts
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { analyze } from "../api/client";
 import type { Lang, SceneResult, SystemEvent } from "../api/types";
 import { captureFrame, looksCovered } from "./captureFrame";
 import { useCamera } from "./useCamera";
 
-const INTERVAL_MS = Number(import.meta.env.VITE_FRAME_INTERVAL_MS ?? 1500);
+// `|| 1500` (not `?? 1500`) so an empty VITE_FRAME_INTERVAL_MS= can't become 0 and hammer Gemini
+const INTERVAL_MS = Math.max(500, Number(import.meta.env.VITE_FRAME_INTERVAL_MS) || 1500);
 const TIMEOUT_MS = 5000;
 const NO_CONN_REPEAT_MS = 20000;
 const PREV_MAX_AGE_MS = 4000; // older than this, the "previous frame" can't show motion honestly
@@ -274,16 +295,18 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
   const wakeLock = useRef<WakeLockSentinel | null>(null);
   const cutWaitShort = useRef<(() => void) | null>(null);
   const askers = useRef<((r: CheckResult) => void)[]>([]);
+  const resetFailures = useRef(false);
 
   const keepAwake = useCallback(async () => {
     try { wakeLock.current = await navigator.wakeLock?.request("screen"); } catch { /* refused: fine */ }
   }, []);
 
-  // iOS drops the wake lock (and often the camera) when the page is hidden. When the walker
-  // comes back to Safari, take both back.
+  // iOS drops the wake lock (and sometimes the camera) when the page is hidden. When the walker
+  // comes back to Safari, take both back, and forget failures that happened while frozen.
   useEffect(() => {
     const onVisible = async () => {
       if (document.visibilityState !== "visible" || !running.current) return;
+      resetFailures.current = true;
       await keepAwake();
       if (!camera.isLive()) {
         try { await camera.start(); } catch { onSystemRef.current("camera_blocked"); }
@@ -293,7 +316,7 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [camera, keepAwake]);
 
-  /** "What's ahead?": take the next snapshot right away and resolve with its result. */
+  /** "What's ahead?": answer with the snapshot in flight, or take one right away. */
   const checkNow = useCallback(
     () =>
       new Promise<CheckResult>((resolve) => {
@@ -314,30 +337,35 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
       await camera.start();
     } catch {
       // Permission denied or no camera. Never fail silently.
-      onSystemRef.current("camera_blocked");
-      running.current = false;
+      if (generation.current === gen) {
+        running.current = false;
+        onSystemRef.current("camera_blocked");
+      }
       return;
     }
+    if (!alive()) { camera.stop(); return; } // Stop was tapped during the permission prompt
     await keepAwake();
 
     let fails = 0;
     let lastNoConn = 0;
-    let coveredCount = 0;
+    let blockedCount = 0;
 
     while (alive()) {
       const roundStart = performance.now();
-      let answer: CheckResult = { ok: false, reason: "camera_blocked" };
-      const frame = captureFrame(camera.videoRef.current!);
+      if (resetFailures.current) { fails = 0; resetFailures.current = false; }
+      const video = camera.videoRef.current;
+      const frame = video && camera.isLive() ? captureFrame(video) : null;
+      const blocked = !camera.isLive() || (frame !== null && looksCovered(frame));
+      blockedCount = blocked ? blockedCount + 1 : 0;
+      if (blockedCount === 2) onSystemRef.current("camera_blocked");
 
-      if (frame) {
-        coveredCount = looksCovered(frame) ? coveredCount + 1 : 0;
-        if (coveredCount === 2) onSystemRef.current("camera_blocked");
-
+      if (frame && !blocked) {
         const prev = prevFrame.current && frame.at - prevFrame.current.at < PREV_MAX_AGE_MS
           ? prevFrame.current.b64
           : null;
         const ctrl = new AbortController();
         const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+        let answer: CheckResult;
         try {
           const result = await analyze(frame.b64, prev, langRef.current, ctrl.signal);
           if (!alive()) break; // stopped while we were waiting: drop it
@@ -360,8 +388,11 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
           clearTimeout(timer);
         }
         prevFrame.current = { b64: frame.b64, at: frame.at };
+        askers.current.splice(0).forEach((resolve) => resolve(answer));
+      } else if (blocked) {
+        askers.current.splice(0).forEach((resolve) => resolve({ ok: false, reason: "camera_blocked" }));
       }
-      askers.current.splice(0).forEach((resolve) => resolve(answer));
+      // (no frame yet because the camera is still warming up: askers wait for the next round)
 
       // Wait out the interval, unless "What's ahead?" cuts it short
       const wait = INTERVAL_MS - (performance.now() - roundStart);
@@ -370,6 +401,8 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
           const t = setTimeout(resolve, wait);
           cutWaitShort.current = () => { clearTimeout(t); resolve(); };
         });
+      } else if (askers.current.length > 0 && !frame && !blocked) {
+        await new Promise((r) => setTimeout(r, 200)); // camera warming up: don't spin
       }
       cutWaitShort.current = null;
     }
@@ -388,14 +421,21 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
     wakeLock.current = null;
   }, [camera]);
 
-  return { videoRef: camera.videoRef, start, stop, checkNow };
+  return useMemo(
+    () => ({ videoRef: camera.videoRef, start, stop, checkNow }),
+    [camera.videoRef, start, stop, checkNow],
+  );
 }
 ```
 
 Rules baked in:
 - **One request in flight**, 5 s timeout; the next snapshot waits for the previous answer.
 - **Stop → Start quickly can't create two loops**: each start gets a generation number, and an old loop exits as soon as it notices it's stale (it also never fires events after Stop).
+- **Stop during the camera permission prompt** turns the camera off as soon as the prompt closes (otherwise the camera would stay on after Stop).
 - **Camera permission denied → `camera_blocked`**, not a silent failure.
+- **Camera blocked = 2 snapshots in a row** where the track isn't live (iOS interruption) or the frame looks covered. Blocked snapshots aren't sent to Gemini.
+- **Returning to Safari forgets failures from while the page was frozen**, so it doesn't falsely say "No connection".
+- **Hook return values are memoized**, so Jibril's `useCallback`s don't re-run every render.
 - `prevFrame` is sent so Gemini can see what's **approaching**, but only if it's < 4 s old (after an outage an old frame would fake "motion").
 - **"What's ahead?" gets the fastest honest answer**: the snapshot already in flight if there is one (taken ≤ ~1.3 s before the question), otherwise a new one right away. It also says *why* when there's no result (`no_connection` / `camera_blocked` / `stopped`), so Jibril can say "No connection" instead of a misleading "Unclear".
 - A "What's ahead?" result goes **only to the caller**, so it isn't spoken twice.
@@ -516,7 +556,9 @@ If 3 or 4 fails badly, **ship tap-anywhere only** and tell Jibril to hide the vo
 - [ ] Airplane mode → `no_connection` → back online → `connection_back`
 - [ ] Covered lens → `camera_blocked`; normal daylight, a blank wall or sky never triggers it
 - [ ] Camera permission denied → `camera_blocked` (never a silent Start)
-- [ ] Rapid Stop/Start never creates two loops; nothing fires after Stop
+- [ ] Rapid Stop/Start never creates two loops; nothing fires after Stop; Stop during the permission prompt leaves the camera off
+- [ ] Switching apps and coming back doesn't say "Camera blocked" or "No connection"
+- [ ] `VITE_MOCK_API` removed before filming
 - [ ] Screen off → back on → SeeWalk resumes by itself
 - [ ] "What's ahead?" (voice **and** tap) answers within ~1.5 s without doubling requests
 - [ ] Voice command tested with Bluetooth headphones; either works or is switched off
@@ -532,6 +574,8 @@ If 3 or 4 fails badly, **ship tap-anywhere only** and tell Jibril to hide the vo
 | Front camera instead of rear | `facingMode: { ideal: "environment" }` (not `"user"`) |
 | `videoWidth` is 0 | Camera not ready yet; `captureFrame` returns `null` and the loop just waits |
 | Everything is slow / 503s | Free-tier limits; use `VITE_FRAME_INTERVAL_MS=5000` until billing is on |
+| Hear "No connection" while Wi-Fi is fine | The server returns 503 when Gemini **rate-limits** (free tier) too. Check Aroha's server log; slow the interval or turn billing on |
+| Voice replies play quietly from the earpiece (no headphones) | iOS routes audio to the earpiece while the mic is active. Test with and without headphones; if it's bad, turn the voice command off |
 | Voice command never fires | Siri & Dictation off, mic permission denied, or recognition stopped: check `onerror` in the console |
 | Headphone audio goes muffled when the mic is on | iOS "call mode". Turn the voice command off; tap-anywhere still works |
 | "Camera blocked" at dusk | Out of scope (daylight only). Film before ~6:45 PM |
@@ -599,7 +643,7 @@ Gemini takes ~1.5 s. A bike covers ~8 m in that time. COCO-SSD runs **on the pho
      return () => { running = false; };
    }
    ```
-3. Start it after the camera starts (same `video` element) and feed Jibril's `onResult`. His `pickAlert` already dedupes and ranks it alongside Gemini's results.
+3. Start it after the camera starts (same `video` element), stop it on Stop (call the function `startFastLayer` resolves to), and feed Jibril's `onResult`. His `pickAlert` already dedupes and ranks it alongside Gemini's results, and because these phrases **exactly match the bundled clips**, his `speak` plays the clip instantly instead of calling `/tts`.
 4. Test on the iPhone: first load downloads the model (a few MB), then watch for heat and battery drain. If it's too slow, raise the tick to 500 ms.
 
 For the video: a teammate walking quickly toward the camera shows off the fast layer ("Person ahead" before Gemini would have answered).

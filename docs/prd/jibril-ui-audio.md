@@ -113,7 +113,8 @@ export class AudioEngine {
 
   /** Decode every bundled clip for a language so fallbacks play instantly. */
   async preload(lang: Lang) {
-    await Promise.all(
+    // allSettled: one missing clip must not break Start
+    await Promise.allSettled(
       Object.keys(clips).map(async (key) => {
         const id = `${lang}/${key}`;
         if (this.buffers.has(id)) return;
@@ -121,6 +122,16 @@ export class AudioEngine {
         this.buffers.set(id, await this.ctx!.decodeAudioData(await res.arrayBuffer()));
       }),
     );
+  }
+
+  /** iOS suspends ("interrupts") the audio context after a call, Siri, or switching apps.
+   *  Try to resume before every sound; if it stays suspended, the next tap resumes it. */
+  private ensureRunning() {
+    if (this.ctx && this.ctx.state !== "running") this.ctx.resume().catch(() => {});
+  }
+
+  hasClip(lang: Lang, key: string) {
+    return this.buffers.has(`${lang}/${key}`);
   }
 
   get busy() {
@@ -134,6 +145,7 @@ export class AudioEngine {
 
   /** Short beep placed in the left (-1), centre (0) or right (+1) ear. */
   playTone(pan: number, freq = 1000, ms = 120): Promise<void> {
+    this.ensureRunning();
     const ctx = this.ctx!;
     const t = ctx.currentTime;
     const osc = new OscillatorNode(ctx, { frequency: freq, type: "sine" });
@@ -157,6 +169,7 @@ export class AudioEngine {
 
   private playBuffer(buffer: AudioBuffer, pan: number): Promise<void> {
     this.stop();
+    this.ensureRunning();
     const ctx = this.ctx!;
     const src = new AudioBufferSourceNode(ctx, { buffer });
     src.connect(new StereoPannerNode(ctx, { pan })).connect(ctx.destination);
@@ -236,6 +249,10 @@ import { fallbackClip, panFor, pickAlert } from "../alerts/pickAlert";
 import { useWalkLoop } from "../camera/useWalkLoop";
 import { createVoiceCommand } from "../camera/voiceCommand";
 import { strings } from "../i18n/strings";
+import { MOCK } from "../api/client";
+import clips from "../audio/clips.json";
+
+type ClipTable = Record<string, Record<Lang, string>>;
 
 export default function WalkMode() {
   const [lang, setLang] = useState<Lang>("en");
@@ -244,17 +261,38 @@ export default function WalkMode() {
   const [status, setStatus] = useState<"idle" | "walking" | "noConn" | "blocked">("idle");
   const t = strings[lang];
 
+  // Only one alert at a time. Each alert gets an id; if a newer one starts (urgent, or the
+  // walker asked), the older one stops at its next step instead of talking over it.
+  const speechId = useRef(0);
+  const speaking = useRef(false);
+
   const speak = useCallback(async (h: Hazard, asked = false) => {
-    if (h.urgency === 1 || asked) audio.stop(); // urgent, or the walker asked: interrupt
-    else if (audio.busy) return;                // otherwise don't talk over ourselves
-    const pan = panFor(h);
-    setCaption(h.phrase);
-    await audio.playTone(pan, h.urgency === 1 ? 1200 : 1000);
+    const interrupt = h.urgency === 1 || asked;
+    if (!interrupt && (speaking.current || audio.busy)) return; // don't talk over ourselves
+    const id = ++speechId.current;
+    const current = () => speechId.current === id;
+    speaking.current = true;
+    audio.stop();
     try {
-      await audio.playSpeech(await tts(h.phrase, lang), pan);
-    } catch {
+      const pan = panFor(h);
+      setCaption(h.phrase);
+      await audio.playTone(pan, h.urgency === 1 ? 1200 : 1000);
+      if (!current()) return;
       const key = fallbackClip(h);
-      if (key) await audio.playClip(lang, key, pan);
+      // Exact match with a bundled clip (always true for the fast layer): play it instantly
+      if (key && audio.hasClip(lang, key) && (clips as ClipTable)[key]?.[lang] === h.phrase) {
+        await audio.playClip(lang, key, pan);
+        return;
+      }
+      try {
+        const mp3 = await tts(h.phrase, lang);   // gives up after 2.5 s: never speak a stale alert
+        if (!current()) return;
+        await audio.playSpeech(mp3, pan);
+      } catch {
+        if (current() && key) await audio.playClip(lang, key, pan);
+      }
+    } finally {
+      if (current()) speaking.current = false;
     }
   }, [lang]);
 
@@ -303,12 +341,14 @@ export default function WalkMode() {
     audio.stop();                                // they asked: this answer comes first
     if (!answer.ok) {
       if (answer.reason === "stopped") return;
+      speechId.current++;                        // cancel any alert still on its way
       setCaption(strings[lang][answer.reason === "no_connection" ? "noConn" : "blocked"]);
       await audio.playClip(lang, answer.reason); // "No connection…" or "Camera blocked"
       return;
     }
     const r = answer.result;
     if (r.unclear) {
+      speechId.current++;
       setCaption(lang === "fr" ? "Incertain" : "Unclear");
       await audio.playClip(lang, "unclear");
       return;
@@ -317,6 +357,7 @@ export default function WalkMode() {
     if (h) {
       await speak(h, true);
     } else {
+      speechId.current++;
       // They asked, so never answer with silence, but never promise "safe" or "clear" either
       setCaption(lang === "fr" ? "Rien de détecté" : "Nothing detected");
       await audio.playClip(lang, "nothing_detected");
@@ -336,6 +377,7 @@ export default function WalkMode() {
   return (
     <main className="walk">
       <video ref={walk.videoRef} playsInline muted autoPlay className="preview" aria-hidden="true" />
+      {MOCK && <p className="mock-badge">MOCK DATA</p>}
       <p className="status" role="status">{t[status]}</p>
       <p className="caption" aria-live="polite">{caption}</p>
       <div className="row">
@@ -358,6 +400,7 @@ In `index.css` (replace Vite's default):
 - `.primary`: full width, **≥ 120 px tall**, 28 px+ bold text
 - `.caption`: 36–44 px bold, centred. **This is what viewers read in the video**
 - `.preview`: the live camera, top ~35% of the screen, `object-fit: cover`. It looks great on camera
+- `.mock-badge`: bright red corner label, only shown while `VITE_MOCK_API=1`, so fake results can't sneak into the video
 - `.ahead-zone`: **the entire lower half of the screen**, one big button reading "What's ahead?". Walkers can hit it without looking; with VoiceOver it's one clearly labelled button
 - The phone hangs **portrait** on a lanyard, so design for portrait only
 - All buttons ≥ 56 px tall, clear focus outline
@@ -391,6 +434,8 @@ In `index.css` (replace Vite's default):
 | No sound on iPhone | `audio.unlock()` must run inside the tap handler, before any `await` that isn't audio. Also check the silent switch |
 | Sound in both ears | Headphones must be stereo; test with regular earbuds first. `StereoPannerNode` needs iOS 14.1+ |
 | `decodeAudioData` fails | The response wasn't an mp3 (probably a 503 JSON). Check `r.ok` in `tts()` |
+| Silence after a phone call / Siri / switching apps | iOS suspends the audio context; `ensureRunning()` resumes it before each sound. If it stays silent, a tap resumes it |
+| An old alert plays late, after a newer one | That's what `speechId` prevents; `tts()` also gives up after 2.5 s |
 | Talking over itself | Only urgency 1 may interrupt; others skip while `audio.busy` |
 | Clips 404 | They live in `web/public/audio/{en,fr}/`. Don't move or delete that folder |
 
