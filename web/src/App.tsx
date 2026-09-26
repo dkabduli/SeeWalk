@@ -1,50 +1,82 @@
 import './styles/App.css'
-import React, { useRef, useCallback, useState } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import Webcam from "react-webcam";
 
-const deviceWidth = 600
-const deviceHeight = 600
+const deviceWidth = 600;
+const deviceHeight = 600;
 
 const videoConstraints = {
-  width: deviceWidth,
-  height: deviceHeight,
-  facingMode: "user"
+    width: deviceWidth,
+    height: deviceHeight,
+    facingMode: "user"
 };
 
 const CustomWebcam = () => {
-  const webcamRef = useRef(null);
-  const [imgSrc, setImgSrc] = useState(null)
+    const webcamRef = useRef<any>(null);
+    //const [imgSrc, setImgSrc] = useState<string | null>(null);
+    const [isRunning, setIsRunning] = useState(false);
 
-  // setInterval(() => {
-  //   const imageSrc = webcamRef.current.getScreenshot();
-  //   console.log(imageSrc)
-  //   setImgSrc(null)
-  //   console.log("Hi")
-  // }, 1000)
+    useEffect(() => {
+        if (!isRunning) return;
 
-  const capture = useCallback(() => {
-    const imageSrc = webcamRef.current.getScreenshot();
-    setImgSrc(imageSrc)
-    console.log(imageSrc)
-  }, [webcamRef])
+        let running = true;
 
-  return (
-    <div className="container">
-      {imgSrc ? (
-        <img src={imgSrc} alt="webcam" />
-      ) : <>
-        <Webcam videoConstraints={videoConstraints} ref={webcamRef} />
-        <button onClick={capture}>Capture</button>
-      </>}
-    </div>
-  );
-}
+        const detect = async () => {
+            while (running) {
+                const imageSrc = webcamRef.current?.getScreenshot();
 
+                if (!imageSrc) {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    continue;
+                }
+
+                try {
+                    console.log("Sending Info..");
+
+                    const info = await fetch("http://localhost:8001/detect", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({ image: imageSrc })
+                    });
+
+                    const result = await info.json();
+
+                    console.log("Gemini:", result.result);
+                } catch (e) {
+                    console.log(e);
+                }
+
+                await new Promise(resolve => setTimeout(resolve, 3000));
+            }
+        };
+
+        detect();
+
+        return () => {
+            running = false;
+        };
+    }, [isRunning]);
+
+    return (
+        <div className="container">
+            <Webcam
+                videoConstraints={videoConstraints}
+                ref={webcamRef}
+            />
+
+            <button onClick={() => setIsRunning(prev => !prev)}>
+                {isRunning ? "Pause" : "Resume"}
+            </button>
+        </div>
+    );
+};
 
 function App() {
-  return (
-    <CustomWebcam></CustomWebcam>
-  );
+    return (
+        <CustomWebcam />
+    );
 }
 
-export default App
+export default App;
