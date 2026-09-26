@@ -5,6 +5,7 @@ import { captureFrame, looksCovered } from "../camera/captureFrame";
 import { createVoiceCommand } from "../camera/voiceCommand";
 import { useWalkLoop } from "../camera/useWalkLoop";
 import "../styles/camera-lab.css";
+import { sendToLaptop } from "../debug/laptopLog";
 
 /** Camera lab: a debug page for Abdul's piece (camera, snapshot loop, events, voice command).
  *  Not the real UI (that's Jibril's WalkMode); it shows everything the loop does so it can be
@@ -15,29 +16,6 @@ interface LogLine { id: number; at: string; kind: "result" | "fast" | "system" |
 let nextLogId = 0;
 const time = () => new Date().toLocaleTimeString([], { hour12: false });
 
-/** Mirror the log to web/lab-log.jsonl on the laptop (dev server / preview). Lines that can't be
- *  sent (phone offline, e.g. the airplane-mode test) are kept and sent when the connection is back. */
-const unsent: string[] = [];
-let sending = false;
-async function flushToLaptop() {
-  if (sending) return;
-  sending = true;
-  try {
-    while (unsent.length) {
-      const r = await fetch("/__lablog", { method: "POST", body: unsent[0] });
-      if (!r.ok) break;
-      unsent.shift();
-    }
-  } catch { /* offline: try again later */ }
-  sending = false;
-}
-let retryTimer: ReturnType<typeof setInterval> | null = null;
-function sendToLaptop(line: { at: string; kind: string; text: string }) {
-  unsent.push(JSON.stringify(line));
-  if (unsent.length > 2000) unsent.shift();
-  retryTimer ??= setInterval(() => void flushToLaptop(), 2000); // only once the lab is used
-  void flushToLaptop();
-}
 
 function describe(r: SceneResult) {
   if (r.unclear) return "unclear";
@@ -98,7 +76,7 @@ export default function CameraLab() {
   const langRef = useRef(lang);
   useLayoutEffect(() => { langRef.current = lang; });
   const lastFast = useRef({ text: "", at: 0 });
-  const fastPerf = useRef({ sum: 0, n: 0, since: 0 });
+  const fastPerf = useRef({ sum: 0, n: 0, since: 0, first: true });
 
   // Start downloading the fast-layer model as soon as the lab opens (it took ~19 s cold)
   useEffect(() => {
@@ -107,7 +85,7 @@ export default function CameraLab() {
 
   const startFast = async (gen: number) => {
     setFastInfo("loading model…");
-    fastPerf.current = { sum: 0, n: 0, since: performance.now() };
+    fastPerf.current = { sum: 0, n: 0, since: performance.now(), first: true };
     const video = videoRef.current;
     for (let i = 0; i < 100 && video && !video.videoWidth; i++) await new Promise((r) => setTimeout(r, 100));
     if (!video || fastGen.current !== gen) return;
@@ -132,9 +110,9 @@ export default function CameraLab() {
           perf.sum += st.lastDetectMs;
           perf.n += 1;
           const now = performance.now();
-          if (perf.n === 1 || now - perf.since > 10000) {
+          if (perf.first || now - perf.since > 10000) {
             add("info", `fast: ${Math.round(perf.sum / perf.n)} ms/check (${perf.n} checks), waited ${(st.loadMs / 1000).toFixed(1)} s for model`);
-            fastPerf.current = { sum: 0, n: 0, since: now };
+            fastPerf.current = { sum: 0, n: 0, since: now, first: false };
           }
         },
       );

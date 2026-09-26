@@ -1,11 +1,12 @@
-"""Stand-in server with /listen, /health and a FAKE /analyze, so the camera + voice pieces can be
-tested on the iPhone (over the real network) before Aroha's main.py exists.
+"""Stand-in server with /listen, /health and a placeholder /analyze (answers "nothing seen"), so the
+camera + voice pieces can be tested on the iPhone before Aroha's main.py exists.
 Delete once main.py exists and includes listen.router.
 
     cd server && .venv/bin/uvicorn listen_app:app --host 0.0.0.0 --port 8000
 """
 import itertools
 import logging
+import os
 
 from fastapi import FastAPI
 
@@ -21,8 +22,10 @@ def health():
     return {"ok": True, "stand_in": True}
 
 
-# FAKE /analyze: same rotating results as the web mock, but served over the network, so
-# airplane mode really cuts the snapshot loop off (tests no_connection / connection_back).
+# /analyze stand-in: answers "nothing seen" so SeeWalk never speaks made-up hazards (the
+# rotating fakes were being spoken during real walks). For plumbing tests only (e.g. airplane
+# mode), start with SEEWALK_FAKE_ANALYZE=1 to get rotating fake results again.
+_NOTHING = {"hazards": [], "unclear": False}
 _FAKE = itertools.cycle([
     {"hazards": [], "unclear": False},
     {"hazards": [{"type": "stop_sign", "direction": "ahead", "distance": "near", "urgency": 3, "confidence": 0.93,
@@ -35,4 +38,4 @@ _FAKE = itertools.cycle([
 
 @app.post("/analyze")
 def fake_analyze(body: dict):
-    return next(_FAKE)
+    return next(_FAKE) if os.getenv("SEEWALK_FAKE_ANALYZE") else _NOTHING

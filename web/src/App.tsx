@@ -1,6 +1,8 @@
 import './styles/App.css'
 import { useRef, useState, useEffect } from "react";
 import Webcam from "react-webcam";
+import CameraLab from "./pages/CameraLab";
+import WalkMode from "./pages/WalkMode";
 
 const deviceWidth = 600;
 const deviceHeight = 600;
@@ -80,9 +82,11 @@ const CustomWebcam = () => {
 };
 
 function App() {
-  return (
-    <CustomWebcam></CustomWebcam>
-  );
+  // Walk Mode is the app. Aroha's /detect webcam page is at …/?capture, Abdul's camera debug page at …/?lab.
+  const params = new URLSearchParams(window.location.search);
+  if (params.has("lab")) return <CameraLab />;
+  if (params.has("capture")) return <CustomWebcam></CustomWebcam>;
+  return <WalkMode />;
 }
 
 export default App;
