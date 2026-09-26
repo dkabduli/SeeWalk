@@ -40,7 +40,7 @@ Drag to turn, scroll to zoom. Source: [`docs/signal-path-3d.html`](docs/signal-p
 
 ## How it works: the data flow
 
-**In plain English:** the phone shows a **live camera feed** (like the camera app), but nobody presses a shutter. Every ~1.5 s the app quietly grabs **one still snapshot** from that live feed and sends it to our server. The server asks **Gemini** "what matters in this picture?" and gets back a short structured answer (e.g. *pothole, ahead, 0.9 confidence, "Pothole ahead"*). The phone decides whether it's worth saying, then the server has **ElevenLabs** turn the phrase into River's voice, and the phone plays it in the walker's ears. Then it grabs the next snapshot. So it's **a stream of snapshots, one at a time**, not a video stream and not photos saved to the camera roll.
+**In plain English:** the phone shows a **live camera feed** (like the camera app), but nobody presses a shutter. Every ~1.5 s the app quietly grabs **one still snapshot** from that live feed and sends it to our server, together with the previous snapshot. The server asks **Gemini** "what matters in this picture, and is anything coming closer?" and gets back a short structured answer (e.g. *pothole, ahead, 0.9 confidence, "Pothole ahead"*). The phone decides whether it's worth saying, then the server has **ElevenLabs** turn the phrase into River's voice, and the phone plays it in the walker's ears. Then it grabs the next snapshot. So it's **a stream of snapshots, one at a time**, not a video stream and not photos saved to the camera roll.
 
 ```
  PHONE (iPhone Safari, worn on chest)                     SERVER (FastAPI)
@@ -65,8 +65,8 @@ Drag to turn, scroll to zoom. Source: [`docs/signal-path-3d.html`](docs/signal-p
 ```
 
 1. **Capture.** The phone's rear camera streams into a hidden `<video>`. Every ~1.5 s a frame is drawn to a canvas, resized to 768 px, JPEG q0.7, base64. Only **one request is in flight** at a time (5 s timeout).
-2. **Send.** `POST /analyze` with `{ image, lang }`. API keys never leave the server.
-3. **See (Gemini).** The server calls **Gemini 3.5 Flash-Lite** through the **Interactions API** with `thinking_level: "minimal"` and a JSON schema, so Gemini returns structured hazards instead of free text. Each frame is judged on its own.
+2. **Send.** `POST /analyze` with `{ image, prev_image, lang }`: the current snapshot plus the one before it. API keys never leave the server.
+3. **See (Gemini multimodal vision).** The server sends the prompt and **both images in one request** to **Gemini 3.5 Flash-Lite** through the **Interactions API**, with `thinking_level: "minimal"` and a JSON schema. Gemini returns structured hazards, and comparing the two frames tells it whether something is `approaching`. Two frames cost no extra time (measured ~1.35 s for one or two).
 4. **Return.** The validated `SceneResult` goes back to the phone.
 5. **Decide.** The phone keeps it simple: drop anything under 0.6 confidence ("never guess"), don't repeat the same hazard + direction within 5 s, and speak only the most urgent one.
 6. **Speak.** A short tone panned left/center/right plays first, then the phone sends the hazard's `phrase` to `POST /tts`.
@@ -90,7 +90,16 @@ Alternatives we measured and rejected:
 | Gemini 3.8 Live, speaking for itself | ~1.1 s to first audio | Replaces ElevenLabs/River; answers ran ~4 s long; harder to control what it says |
 | Gemini 3.8 Live → transcript → ElevenLabs | ~1.3–1.5 s | Same speed as Flash-Lite, but needs a WebSocket relay; Live can't return text directly |
 
-### Gemini call (`server/gemini.py`)
+### Why Gemini multimodal vision fits
+
+Gemini takes **text and images in the same request**, which we use three ways:
+1. **Understanding the scene**, not just labelling objects: "crosswalk ahead", "branch at head height", "curb", things a basic object detector can't name.
+2. **Two frames at once** (previous + current) so it can tell what's **approaching**, with no extra latency.
+3. **Structured output**: it answers in our JSON schema, in English or French, so the phone never parses free text.
+
+Measured options: 1 frame ~1.3 s · 2 frames ~1.35 s · + bounding boxes ~1.6 s (a stretch goal: compute left/right from the box in code).
+
+### Gemini call (`server/gemini.py`, simplified; full version in [Aroha's PRD](docs/prd/aroha-ai-backend.md))
 
 ```python
 interaction = client.interactions.create(
@@ -128,6 +137,7 @@ result = SceneResult.model_validate_json(interaction.output_text)
       "distance": "close | near | far",
       "urgency": 1,               // 1 = urgent, 2 = warning, 3 = info
       "confidence": 0.82,         // 0–1
+      "approaching": false,       // moved toward the walker between the two frames
       "phrase": "Pothole ahead"   // ≤ 4 words, in the requested language, spoken by ElevenLabs
     }
   ],
@@ -139,7 +149,7 @@ result = SceneResult.model_validate_json(interaction.output_text)
 
 | Method | Path | Request | Response |
 |---|---|---|---|
-| `POST` | `/analyze` | `{ "image": "<base64 jpeg>", "lang": "en" \| "fr" }` | `SceneResult`; `503` if Gemini is unavailable |
+| `POST` | `/analyze` | `{ "image": "<base64 jpeg>", "prev_image": "<base64 jpeg> \| null", "lang": "en" \| "fr" }` | `SceneResult`; `503` if Gemini fails or takes > 4 s |
 | `POST` | `/tts` | `{ "text": "Pothole ahead", "lang": "en" \| "fr" }` | `audio/mpeg` |
 | `GET` | `/health` | | `{ "ok": true }` |
 
@@ -182,155 +192,55 @@ Silence must never mean "all clear" by accident.
 
 ## Who's doing what
 
-Each person owns their own folders so we don't step on each other. Everyone builds against the **data contracts** above: if your piece sends/receives exactly those shapes, the pieces fit together.
+Each person has a **PRD in [`docs/prd/`](docs/prd/)** that walks them through their piece step by step, with starter code, a "done when" checklist and gotchas. **Start with the [shared contract](docs/prd/README.md)**: it's what makes the four pieces fit together.
 
 ```
- Abdul (camera)          Aroha (backend)                 Jibril (UI + audio)          Siddig (tunnel + video)
- snapshot every 1.5 s ─► /analyze → Gemini → JSON ─────► filter → tone → /tts ─────► headphones ─► 🎥 filmed
-                                   /tts → ElevenLabs ◄──┘
+ Abdul (camera)            Aroha (backend)                  Jibril (UI + audio)             Siddig (tunnel + video)
+ snapshot every 1.5 s ──► /analyze → Gemini → JSON ──────► pickAlert → tone → /tts ──────► 🎧 ──► 🎥 filmed + Devpost
+                          /tts → ElevenLabs (River) ◄─────┘
 ```
 
-**Order of work Saturday morning:** Jibril pushes the `web/` scaffold first (≈30 min). Aroha starts the backend immediately (no dependency). Abdul starts camera code as soon as the scaffold lands. Siddig sets up the tunnel so everyone can test on iPhones.
+| Person | Role | Owns | PRD |
+|---|---|---|---|
+| **Aroha** | AI + backend | `server/` | [aroha-ai-backend.md](docs/prd/aroha-ai-backend.md) |
+| **Abdul** | Camera + capture, repo owner | `web/src/api/`, `web/src/camera/` | [abdul-camera-capture.md](docs/prd/abdul-camera-capture.md) |
+| **Jibril** | Phone UI + audio | `web/` scaffold, `pages/`, `audio/`, `alerts/`, `i18n/` | [jibril-ui-audio.md](docs/prd/jibril-ui-audio.md) |
+| **Siddig** | Tunnel, video, Devpost | tunnel, `docs/shot-list.md`, deploy | [siddig-deploy-video.md](docs/prd/siddig-deploy-video.md) |
 
----
+**Saturday morning order:** Jibril pushes the `web/` scaffold first (~30 min) → Abdul merges it right away. Aroha starts the backend immediately (no dependencies). Abdul pushes `web/src/api/types.ts` early so everyone codes against the same shapes. Siddig gets the HTTPS tunnel running so everyone can test on iPhones.
 
-### Aroha: AI + backend (`server/`)
+### Aroha: AI + backend
+Snapshot in → Gemini → hazards out (`/analyze`); phrase in → ElevenLabs → River's voice out (`/tts`).
+- [ ] `schemas.py`, `gemini.py` (two-frame multimodal call), `tts.py` (cached), `main.py` (FastAPI)
+- [ ] `eval_samples.py` on the team's photos → tune the prompt until nothing is invented and median ≤ 1.5 s
+- [ ] French phrases correct; Gemini failures return `503`, never crash
 
-**Your job:** take a snapshot in, give hazards out (`/analyze`); take a phrase in, give River's voice out (`/tts`).
+### Abdul: camera + capture (repo owner)
+Turn the live iPhone camera into a steady stream of snapshots and report when things break.
+- [ ] `types.ts` + `client.ts` pushed early; a mock API for testing without the backend
+- [ ] `captureFrame` (768 px JPEG + brightness), `useCamera`, `useWalkLoop` (one request in flight, 5 s timeout, previous frame included)
+- [ ] `no_connection` / `connection_back` / `camera_blocked` events; screen stays awake
+- [ ] Repo owner: share keys privately, **enable Gemini billing before filming**, merge PRs
 
-**Tasks**
-- [ ] **`server/schemas.py`**: Pydantic models exactly matching the [data contracts](#data-contracts): `Hazard`, `SceneResult`, `AnalyzeRequest {image, lang}`, `TTSRequest {text, lang}`. Use `Literal[...]` for `type`, `direction`, `distance`, `lang`.
-- [ ] **`server/gemini.py`**: `async def analyze_frame(image_b64: str, lang: str) -> SceneResult`
-  - `genai.Client(api_key=config.GEMINI_API_KEY)`, call `client.aio.interactions.create(...)` (async version of the snippet above) with `model=config.GEMINI_MODEL`, `generation_config={"thinking_level": config.GEMINI_THINKING_LEVEL}`, `response_format` = `SceneResult` JSON schema
-  - Put the system prompt above in, with `{English|French}` filled from `lang`
-  - Validate with `SceneResult.model_validate_json(...)`; 4 s timeout
-- [ ] **`server/scripts/eval_samples.py`**: loop over `samples/*.jpg`, call `analyze_frame`, print each photo's hazards + phrases + time, then median and worst time. Save to `samples/results.json`.
-- [ ] **Prompt tuning**: run the eval, look for hazards it missed or invented, adjust the prompt, repeat. Phrases must be ≤ 4 words and in the right language.
-- [ ] **`server/tts.py`**: `async def synthesize(text: str, lang: str) -> bytes`
-  - `httpx.AsyncClient` → `POST https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}/stream?output_format=mp3_44100_64`
-  - header `xi-api-key`, JSON `{"text", "model_id": config.ELEVENLABS_TTS_MODEL, "language_code": lang}`
-  - In-memory cache keyed by `(text, lang)` (a dict capped at ~200 entries is fine)
-- [ ] **`server/main.py`**: FastAPI app
-  - CORS from `config.ALLOWED_ORIGINS`
-  - `POST /analyze` → `SceneResult`; on Gemini error/timeout/429 return `503`
-  - `POST /tts` → `Response(content=mp3, media_type="audio/mpeg")`
-  - `GET /health` → `{"ok": true}`
-  - Log the time each request took (never log the image)
-- [ ] Run it: `cd server && .venv/bin/uvicorn main:app --reload --host 0.0.0.0 --port 8000`
+### Jibril: phone UI + audio
+Everything the walker touches and hears.
+- [ ] **`web/` scaffold first**, with the `/api` proxy (keep `web/public/audio/` and `clips.json`)
+- [ ] `AudioEngine` (unlock on tap, panned tones, live speech, clip fallback), `pickAlert` (≥ 0.6, 5 s no-repeat, most urgent), `WalkMode` screen with big captions, EN/FR, "What's ahead?"
+- [ ] System sounds for connection/camera events; VoiceOver pass
 
-**You're done when**
-- `curl localhost:8000/health` → `{"ok":true}`
-- `curl -X POST localhost:8000/tts -H 'content-type: application/json' -d '{"text":"Pothole ahead","lang":"en"}' -o out.mp3` plays River
-- The eval on the team's photos: median ≤ 1.5 s, no invented hazards, stop signs/crosswalks/curbs found
-
-**Tips**
-- Test `/analyze` with a photo: `base64 -i samples/stop.jpg` pasted into a JSON body, or add a tiny `scripts/try_analyze.py`.
-- Free tier returns `429` if we call too often. Return `503` so the phone treats it as "try again".
-- Existing helpers: `config.py` loads every key, `scripts/check_connections.py` shows the SDK and ElevenLabs calls working.
-
----
-
-### Abdul: camera + capture (`web/src/camera/`, `web/src/api/`) + repo owner
-
-**Your job:** turn the iPhone's live camera into a steady stream of snapshots sent to `/analyze`, and report when things break.
-
-**Tasks**
-- [ ] **`web/src/api/types.ts`**: TypeScript types copied from the [data contracts](#data-contracts) (`Hazard`, `SceneResult`). Everyone imports from here.
-- [ ] **`web/src/api/client.ts`**: `analyze(imageB64, lang, signal): Promise<SceneResult>` and `tts(text, lang): Promise<ArrayBuffer>`, both calling `/api/...` (Vite proxies to the server).
-- [ ] **`web/src/camera/useCamera.ts`**: `getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false })` into a `<video playsInline muted autoPlay>`; stop all tracks on Stop; `track.onended` → report `camera_blocked`.
-- [ ] **`web/src/camera/captureFrame.ts`**: draw the current video frame to a canvas, long edge 768 px, `toDataURL("image/jpeg", 0.7)`, strip the `data:...base64,` prefix. Also compute average brightness from a tiny 32×32 copy; very dark → `camera_blocked` (lens covered).
-- [ ] **`web/src/camera/useWalkLoop.ts`**: the snapshot loop
-  - `useWalkLoop({ lang, onResult, onSystem })` → `{ videoRef, start, stop }`
-  - Loop: capture → `await analyze(...)` with a 5 s `AbortController` → `onResult(result)` → wait until `VITE_FRAME_INTERVAL_MS` has passed since this round started → repeat
-  - Only **one request in flight**; never overlap
-  - 2 failures in a row → `onSystem("no_connection")` (again every 20 s while down); first success after that → `onSystem("connection_back")`
-  - Keep the screen awake with `navigator.wakeLock.request("screen")` (ignore if refused)
-- [ ] `VITE_FRAME_INTERVAL_MS` in `web/.env.local`: `5000` during dev (free tier), `1500` for filming
-- [ ] Repo owner: send teammates the ElevenLabs key privately, turn on Gemini billing on the demo key before filming, review and merge PRs into `main`
-
-**You're done when**
-- On an iPhone (through Siddig's tunnel) the rear camera shows live, and the console logs a `SceneResult` every interval
-- Airplane mode → `no_connection` fires after 2 failures; back online → `connection_back`
-- Covering the lens → `camera_blocked`
-
-**Stretch:** COCO-SSD fast layer for people/bikes/cars (`web/src/detection/`), or an "Ask" button for spoken questions.
-
----
-
-### Jibril: phone UI + audio (`web/` scaffold, `web/src/pages/`, `audio/`, `alerts/`, `i18n/`)
-
-**Your job:** the screen the walker taps, and everything they hear.
-
-**Tasks**
-- [ ] **Scaffold first (push within ~30 min Saturday morning):**
-  ```bash
-  npm create vite@latest web -- --template react-ts
-  cd web && npm install
-  ```
-  In `vite.config.ts`: `server: { host: true, allowedHosts: true, proxy: { "/api": { target: "http://localhost:8000", rewrite: p => p.replace(/^\/api/, "") } } }`. Create the empty folders from the repo layout. **Don't delete `web/public/audio/` or `web/src/audio/clips.json`** (already committed).
-- [ ] **`web/src/pages/WalkMode.tsx`**
-  - Huge Start/Stop button (full width, ≥ 120 px tall), EN/FR toggle, **"What's ahead?"** button
-  - Big caption line showing the last thing spoken (`aria-live="polite"`); this is what viewers read in the video
-  - Small status line: Walking / No connection / Camera blocked
-  - High contrast, readable in sunlight, nothing that requires looking at the screen
-- [ ] **`web/src/audio/AudioEngine.ts`**
-  - Create + `resume()` an `AudioContext` **inside the Start tap** (iOS blocks audio otherwise)
-  - `playTone(pan)`: short beep 880–1200 Hz through a `StereoPannerNode` (left −1, ahead 0, right +1)
-  - `playSpeech(mp3: ArrayBuffer, pan)`: `decodeAudioData` then play
-  - `playClip(key, lang)`: preload the bundled clips from `/audio/{lang}/{key}.mp3` on Start
-  - One sound at a time; urgency 1 interrupts whatever is playing
-- [ ] **`web/src/alerts/pickAlert.ts`**: `pickAlert(result, now): Hazard | null`: drop `confidence < 0.6`; drop the same `type + direction` spoken in the last 5 s; pick the lowest `urgency` (then `close` before `near` before `far`).
-- [ ] **Speak flow** (wire it in `WalkMode`): `onResult` → `pickAlert` → tone → `tts(phrase)` → `playSpeech` → update caption. If `tts` fails → play the matching bundled clip instead (map `type` → clip key; person/bike/car use `_left/_ahead/_right`).
-- [ ] System sounds from `onSystem`: `walk_started`, `walk_stopped`, `no_connection`, `connection_back`, `camera_blocked` (bundled clips + a low tone).
-- [ ] **"What's ahead?"**: runs one capture immediately; if `unclear` → play `unclear`; if nothing → say nothing new (or "Unclear" if unclear).
-- [ ] **`web/src/i18n/strings.ts`**: EN/FR button labels.
-- [ ] VoiceOver pass: every button has a clear label, Start is reachable first.
-
-**You're done when**
-- Tap Start → hear "Walk mode on"
-- A fake `SceneResult` (hard-code one while the backend isn't ready) → tone in the right ear + "Car on your right" in River's voice + caption appears
-- Switching to FR plays French
-
-**Tip:** you can build everything with bundled clips and fake results before Aroha's `/tts` is up.
-
----
-
-### Siddig: tunnel + deploy + video + Devpost
-
-**Your job:** get the app onto everyone's iPhone over HTTPS, then turn the working app into a great 2-minute video and Devpost.
-
-**Tasks**
-- [ ] **HTTPS tunnel (Saturday morning):** the iPhone camera only works over HTTPS.
-  ```bash
-  brew install cloudflared
-  cloudflared tunnel --url http://localhost:5173
-  ```
-  Share the `https://….trycloudflare.com` URL in the group chat. Confirm an iPhone can open it and allow the camera.
-- [ ] **`docs/shot-list.md`**: every scene, what SeeWalk should say, the on-screen caption, who's in frame:
-  1. Hook: phone on chest strap, open-ear headphones, "A white cane finds the ground…"
-  2. Person walking toward the camera → "Person ahead"
-  3. Stop sign → "Stop sign ahead"
-  4. Crosswalk → "Crosswalk ahead"
-  5. Curb / pothole / uneven pavement
-  6. Chair or bin in the path → "Obstacle in your path"
-  7. French switch → same scene in French
-  8. Honesty moment: blurry/covered view → "Unclear"
-  9. Fail out loud: airplane mode → "No connection"
-- [ ] **Gear:** lanyard or chest strap for the demo phone, open-ear or single earbud, a second phone to film, the demo phone's **screen recording on with sound** (captures what SeeWalk said).
-- [ ] **Film in daylight: sunset in Ottawa is ~7 PM Saturday.** Aim for Saturday 4:30–6:45 PM; backup Sunday 7–8 AM. Several takes of each scene.
-- [ ] **Edit** (~2 min): hook (15 s) → field walk with captions (60 s) → "Unclear" + no-connection moments (20 s) → how it works: 3D model + "Gemini sees, ElevenLabs speaks" (15 s) → vision: bilingual, wearable next (10 s).
-- [ ] **Devpost**: inspiration, what it does, how we built it (tools breakdown above), challenges (the latency tests), what's next. Tag Gemini, ElevenLabs, GoDaddy/Vultr if used, Best UI/UX. Add all four teammates, link this repo. **Submit by 9:30 AM Sunday.**
-
-**You're done when:** the video is uploaded, Devpost is submitted with all 4 names, and the repo link works.
-
-**Stretch:** Vultr + GoDaddy domain with Caddy HTTPS so the demo URL doesn't depend on a laptop; Tiger Data hazard map.
-
----
+### Siddig: tunnel, video, Devpost
+Get the app on everyone's iPhone, then turn it into a great 2-minute video.
+- [ ] `cloudflared` HTTPS tunnel Saturday morning
+- [ ] `docs/shot-list.md`, gear, **film Sat 4:30–6:45 PM before sunset**, edit ~2 min
+- [ ] Devpost with all 4 names, **submitted by 9:30 AM Sunday**
+- [ ] Stretch: Vultr + GoDaddy domain with Caddy HTTPS
 
 ### Everyone
 - [ ] Get the keys from Abdul (privately), run `server/scripts/check_connections.py` → ✅✅
 - [ ] 3–4 chest-height photos each (curbs, crosswalks, stop signs, stairs, potholes, branches) → send to Aroha for `samples/`
-- [ ] `git pull origin main` before starting; work on your branch (`Abduls-Work`, `Arohas-Work`, `Siddigs-Work`, `Jibrls-Work`); open a PR into `main` when something works; commit often (judges read the history)
+- [ ] `git pull origin main` before starting; work on your branch; PR into `main` when something works; commit often (judges read the history)
+
+---
 
 ## Phases
 
@@ -401,7 +311,7 @@ seewalk/
 │       ├── i18n/                # EN/FR strings
 │       └── pages/WalkMode.tsx   # main screen (Jibril)
 ├── samples/                     # street photos for testing
-├── docs/                        # 3D model + images
+├── docs/                        # 3D model, images, PRDs (docs/prd/)
 └── SEEWALK_SPEC.md              # original spec
 ```
 
