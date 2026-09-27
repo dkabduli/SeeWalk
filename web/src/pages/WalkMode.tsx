@@ -380,11 +380,6 @@ export default function WalkMode() {
     audio.setVoice(id);
   }
 
-  /** ▶ on a card: hear that voice, without choosing it. */
-  function previewVoice(id: VoiceId) {
-    playSample(id);
-  }
-
   async function whatsAhead() {
     if (!walking) return;
     log("ask", "What's ahead? (tap)");
@@ -497,9 +492,6 @@ export default function WalkMode() {
                   <button className="pick" aria-pressed={voice === v.id} onClick={() => pickVoice(v.id)}>
                     <b>{v.name}</b>
                     <small>{v.place[lang]}</small>
-                  </button>
-                  <button className="hear" aria-label={`${t.hear} ${v.name}`} onClick={() => previewVoice(v.id)}>
-                    <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 1.8v8.4L10.2 6z" /></svg>
                   </button>
                 </div>
               ))}

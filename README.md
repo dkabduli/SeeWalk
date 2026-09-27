@@ -55,7 +55,7 @@ Regenerate after changing the flow: `python3 docs/img/make_how_it_works.py`.
 - The phrase in large type with a direction arrow, coloured by urgency, plus the **last two alerts faded** underneath.
 - The **edge of the camera view glows** on the side the alert came from (red urgent, amber warning, white information).
 - A Siri-style pill: **Listening…** (bars follow the walker's voice), **Thinking…**, then the voice's name (**River**) with bars that follow her actual voice.
-- **Four ElevenLabs voices** (River, Alice, Charlie, Moyo); ▶ to hear each one before choosing.
+- **Four ElevenLabs voices** (River, Alice, Charlie, Moyo); tap one to choose it and hear it.
 - **English / Français** in one tap: screen, clips, voice commands and answers all switch. The server makes sure French mode never speaks English.
 - **Opens like an app:** Share → Add to Home Screen gives a "Companion" icon that runs full screen.
 

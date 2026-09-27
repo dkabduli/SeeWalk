@@ -87,7 +87,7 @@ caffeinate -dimsu
 - [ ] Shokz (or other open-ear headphones) paired and on
 - [ ] Control Center → **Screen Recording** on the demo phone. It records VisionCompanion's own audio for the edit. **Do one 10-second test recording first** and play it back to confirm River is audible with the Shokz connected. If she isn't, film with the Shokz disconnected so VisionCompanion plays from the phone speaker.
 - [ ] Chest mount: phone upright, rear camera forward, not tilted toward the ground or the sky
-- [ ] Setup screen shows **Street alerts: On**, and the voice you want is picked (tap ▶ on a card to hear it first; tap the card to choose it). River is the default.
+- [ ] Setup screen shows **Street alerts: On**, and the voice you want is picked (tapping a card chooses it and plays a sample). River is the default.
 - [ ] Tap **Start walk** once indoors to check. You should hear "Walk mode on" (or the intro, the very first time on this phone).
 
 ## Filming rules
@@ -183,7 +183,7 @@ Keep the reading/holding features **out of the video** except a teaser if there'
 > "Over 300 million people worldwide are blind or have serious vision loss. A white cane finds what's on the ground right in front of you, but not the stop sign 50 feet ahead, the pothole coming up, or the branch at head height. VisionCompanion is a phone on your chest and open-ear headphones: it watches the path and tells you, out loud, what the cane can't find. And you can ask it anything."
 
 ### 2. Pick a voice (15 s), shows off ElevenLabs
-- On the setup screen, tap **▶** on Alice, then Moyo: each plays "Stop sign on your right" in that voice, without switching. Tap River's card to keep River.
+- On the setup screen, tap Alice, then Moyo: each plays "Stop sign on your right" in that voice. Tap River last to walk with River.
 - *Narrator:* "Four ElevenLabs voices, English and French. Every street alert is pre-recorded in each one, so alerts play instantly."
 
 ### 3. Start (10 s)
