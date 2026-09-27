@@ -32,6 +32,16 @@ const REFRESH_MS = 15_000;
 const serverTrouble = (m: string) =>
   m === "map_off" ? "The server has no database." : m === "db_down" ? "The hazard database isn't answering." : "Couldn't reach the server.";
 
+/** Filters panel: open on a computer, folded on a phone (the map needs the screen). Remembered. */
+const PANEL_KEY = "visioncompanion.mapPanel";
+function panelOpenAtStart(): boolean {
+  try {
+    const saved = localStorage.getItem(PANEL_KEY);
+    if (saved) return saved === "open";
+  } catch { /* private mode */ }
+  return typeof window !== "undefined" && window.matchMedia("(min-width: 720px)").matches;
+}
+
 type Status = "loading" | "ready" | "map_off" | "db_down" | "error";
 
 function ago(iso: string) {
@@ -55,6 +65,12 @@ export default function HazardMap() {
   const [status, setStatus] = useState<Status>("loading");
   const [reload, setReload] = useState(0);
   const [pinNote, setPinNote] = useState("");
+  const [panelOpen, setPanelOpen] = useState(panelOpenAtStart);
+  const [hotOpen, setHotOpen] = useState(false);
+  const togglePanel = () => setPanelOpen((open) => {
+    try { localStorage.setItem(PANEL_KEY, open ? "closed" : "open"); } catch { /* private mode */ }
+    return !open;
+  });
   const [pinType, setPinType] = useState<MapType>("pothole");
   // Where this phone is (live), for "you are here" and pinning a hazard where you stand
   const [here, setHere] = useState<{ lat: number; lon: number; accuracy: number } | null>(null);
@@ -252,59 +268,70 @@ export default function HazardMap() {
     <main className="hmap">
       <div ref={mapEl} className="hmap-map" role="application" aria-label="Map of reported sidewalk hazards" />
 
-      <header className="hmap-card hmap-top">
+      <header className={`hmap-card hmap-top${panelOpen ? " open" : ""}`}>
+        {/* Always shown, compact: where you are, the nearest report, and pinning a hazard here */}
         <div className="hmap-title">
           <h1>Hazard map</h1>
-          <p>Sidewalk problems walkers passed + open City of Ottawa 311 reports · stored in Tiger Data</p>
+          <button className="hmap-toggle" aria-expanded={panelOpen} aria-controls="hmap-more" onClick={togglePanel}>
+            {panelOpen ? "Hide" : "Filters"} <span aria-hidden="true">{panelOpen ? "▴" : "▾"}</span>
+          </button>
           <a className="hmap-back" href="./">← Walk</a>
         </div>
-        <div className="hmap-range" role="group" aria-label="Time range">
-          {RANGES.map((r) => (
-            <button key={r.days} aria-pressed={days === r.days} onClick={() => { setDays(r.days); fitted.current = false; }}>
-              {r.label}
-            </button>
-          ))}
-        </div>
-        <div className="hmap-legend" role="group" aria-label="Show sources">
-          <button aria-pressed={showWalkers} onClick={() => setShowWalkers((v) => !v)}>
-            <span className="dot solid" /> Walkers <span className="n">{hazards.length}</span>
-          </button>
-          <button aria-pressed={showCity} onClick={() => setShowCity((v) => !v)}>
-            <span className="dot ring" /> City 311 (open) <span className="n">{city.length}</span>
-          </button>
-        </div>
-        <div className="hmap-legend" role="group" aria-label="Show hazard types">
-          {KNOWN_TYPES.map((t) => (
-            <button key={t} aria-pressed={!hidden.has(t)} onClick={() => toggle(t)}>
-              <span className="dot" style={{ background: TYPE_INFO[t].color }} />
-              {TYPE_INFO[t].label} <span className="n">{counts[t]}</span>
-            </button>
-          ))}
-        </div>
-        {message && <p className="hmap-msg" role="status">{message}</p>}
-        {showCity && cityNote && <p className="hmap-note" role="status">{cityNote}</p>}
         <p className="hmap-here" role="status">
           {here
-            ? <>📍 You are here (±{Math.round(here.accuracy)} m){nearest ? <> · nearest reported: <b>{nearest.label.toLowerCase()}</b>, {Math.round(nearest.d)} m</> : null}</>
+            ? <>📍 You are here (±{Math.round(here.accuracy)} m){nearest ? <> · nearest: <b>{nearest.label.toLowerCase()}</b>, {Math.round(nearest.d)} m</> : null}</>
             : "Finding your location…"}
         </p>
-        <div className="hmap-test">
+        <div className="hmap-pin">
           <select value={pinType} onChange={(e) => setPinType(e.target.value as MapType)} aria-label="Hazard to pin">
             {MAP_TYPES.map((t) => <option key={t} value={t}>{TYPE_INFO[t].label}</option>)}
           </select>
-          <button onClick={pinHere}>📍 Pin a hazard here</button>
-          {pinNote && <span role="status">{pinNote}</span>}
+          <button onClick={pinHere}>📍 Pin here</button>
         </div>
-        <div className="hmap-test">
-          <button onClick={briefHere}>🗣️ Area briefing</button>
+        {pinNote && <p className="hmap-note" role="status">{pinNote}</p>}
+        {message && <p className="hmap-msg" role="status">{message}</p>}
+
+        {/* Folded on a phone: time range, sources, types, area briefing */}
+        <div id="hmap-more" className="hmap-more" hidden={!panelOpen}>
+          <p className="hmap-sub">Sidewalk problems walkers passed + open City of Ottawa 311 reports · stored in Tiger Data</p>
+          <div className="hmap-range" role="group" aria-label="Time range">
+            {RANGES.map((r) => (
+              <button key={r.days} aria-pressed={days === r.days} onClick={() => { setDays(r.days); fitted.current = false; }}>
+                {r.label}
+              </button>
+            ))}
+          </div>
+          <div className="hmap-legend" role="group" aria-label="Show sources">
+            <button aria-pressed={showWalkers} onClick={() => setShowWalkers((v) => !v)}>
+              <span className="dot solid" /> Walkers <span className="n">{hazards.length}</span>
+            </button>
+            <button aria-pressed={showCity} onClick={() => setShowCity((v) => !v)}>
+              <span className="dot ring" /> City 311 <span className="n">{city.length}</span>
+            </button>
+          </div>
+          <div className="hmap-legend" role="group" aria-label="Show hazard types">
+            {KNOWN_TYPES.map((t) => (
+              <button key={t} aria-pressed={!hidden.has(t)} onClick={() => toggle(t)}>
+                <span className="dot" style={{ background: TYPE_INFO[t].color }} />
+                {TYPE_INFO[t].label} <span className="n">{counts[t]}</span>
+              </button>
+            ))}
+          </div>
+          {showCity && cityNote && <p className="hmap-note" role="status">{cityNote}</p>}
+          <div className="hmap-test">
+            <button onClick={briefHere}>🗣️ Area briefing</button>
+          </div>
+          {brief && <p className="hmap-brief" aria-live="polite">{brief}</p>}
         </div>
-        {brief && <p className="hmap-brief" aria-live="polite">{brief}</p>}
       </header>
 
       {hotspots.length > 0 && (
-        <section className="hmap-card hmap-hot" aria-label="Most-reported spots">
-          <h2>Most-reported spots</h2>
-          <ol>
+        <section className={`hmap-card hmap-hot${hotOpen ? " open" : ""}`} aria-label="Most-reported spots">
+          <button className="hmap-hot-toggle" aria-expanded={hotOpen} aria-controls="hmap-hot-list" onClick={() => setHotOpen((v) => !v)}>
+            <h2>Most-reported spots <span className="n">{hotspots.length}</span></h2>
+            <span aria-hidden="true">{hotOpen ? "▾" : "▴"}</span>
+          </button>
+          <ol id="hmap-hot-list" hidden={!hotOpen}>
             {hotspots.map((s) => (
               <li key={`${s.lat},${s.lon}`}>
                 <button onClick={() => map.current?.flyTo([s.lat, s.lon], 18)}>

@@ -82,3 +82,46 @@
 /* "You are here" line and the pin type picker */
 .hmap-here { margin: 0; font-size: 14px; }
 .hmap-test select { font: inherit; padding: 6px 8px; border-radius: 10px; }
+
+/* Phone first: a compact card (title, where you are, pin here); filters fold away behind "Filters". */
+.hmap-card { padding: 10px 12px; border-radius: 16px; box-shadow: 0 4px 0 var(--ink); }
+.hmap-top { gap: 8px; }
+.hmap-title { display: flex; align-items: center; gap: 8px; padding-right: 0; }
+.hmap-title h1 { font-size: 21px; margin-right: auto; }
+.hmap-back { position: static; min-height: 34px; padding: 4px 10px; }
+.hmap-toggle {
+  min-height: 34px; padding: 4px 10px; border: 1.5px solid var(--ink); border-radius: 999px;
+  background: #efece4; font-weight: 700; font-size: 13px;
+}
+.hmap-toggle[aria-expanded="true"] { background: var(--ink); color: #fff; }
+.hmap-here { font-size: 13px; line-height: 1.3; }
+.hmap-pin { display: flex; gap: 8px; }
+.hmap-pin select {
+  flex: 1; min-width: 0; min-height: 40px; font: inherit; font-size: 14px; font-weight: 600;
+  padding: 6px 8px; border: 1.5px solid var(--ink); border-radius: 12px; background: #fff;
+}
+.hmap-pin button {
+  flex: none; min-height: 40px; padding: 6px 14px; border: 2px solid var(--ink); border-radius: 999px;
+  background: var(--teal); font-weight: 800; box-shadow: 0 3px 0 var(--ink);
+}
+.hmap-pin button:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--ink); }
+.hmap-msg, .hmap-brief { padding: 6px 10px; font-size: 13px; }
+.hmap-more { display: grid; gap: 8px; padding-top: 8px; border-top: 1.5px solid #e3dfd4; }
+.hmap-more[hidden] { display: none; }
+.hmap-sub { margin: 0; color: var(--muted); font-size: 12px; }
+.hmap-range button { min-height: 32px; padding: 4px 12px; font-size: 13px; }
+.hmap-legend { gap: 5px; }
+.hmap-legend button { min-height: 32px; padding: 3px 9px; font-size: 12.5px; }
+/* The open filters never take more than ~60% of the screen: they scroll inside the card */
+.hmap-top.open { max-height: calc(62vh - env(safe-area-inset-top)); overflow-y: auto; overscroll-behavior: contain; }
+
+/* Most-reported spots: a small pill at the bottom, opens upward */
+.hmap-hot { padding: 6px 10px; max-height: 45vh; }
+.hmap-hot-toggle {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  border: 0; background: none; padding: 4px 2px; min-height: 36px;
+}
+.hmap-hot-toggle h2 { margin: 0; font-size: 14px; }
+.hmap-hot-toggle .n { color: var(--muted); font-weight: 600; margin-left: 4px; }
+.hmap-hot ol[hidden] { display: none; }
+@media (max-width: 719px) { .hmap-hot:not(.open) { right: auto; } }
