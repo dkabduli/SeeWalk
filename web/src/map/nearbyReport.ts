@@ -35,7 +35,10 @@ export function describeNearby(list: NearHazard[], here: LatLon, direction: numb
     .filter((h) => (potholes ? h.type === "pothole" : h.walkway !== false))
     .map((h) => ({ h, d: metresBetween(here, h) }))
     .filter(({ d }) => d <= ASK_RADIUS_M)
-    .sort((a, b) => a.d - b.d);
+    .sort((a, b) => a.d - b.d)
+    // The city often files several reports for one spot (same address, a few metres apart): one place, said once
+    .filter(({ h }, i, all) => !all.slice(0, i).some(({ h: e }) =>
+      (h.address && e.address === h.address) || metresBetween(e, h) < 30));
   if (!items.length) {
     if (potholes) return fr ? "Aucun nid-de-poule signalé à moins d'un kilomètre." : "No potholes reported within 1 kilometre.";
     return fr ? "Rien de signalé à moins d'un kilomètre." : "Nothing reported within 1 kilometre.";

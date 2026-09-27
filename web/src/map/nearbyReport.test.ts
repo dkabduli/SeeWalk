@@ -54,6 +54,21 @@ describe("where are the nearest potholes", () => {
   });
 });
 
+describe("the city's duplicate reports", () => {
+  it("several reports at one spot are one place (said once); the count is of places", () => {
+    const text = describeNearby([
+      h(200, 0, { id: "a", address: "235 Nicholas St", walkway: false }),
+      h(0, 206, { id: "b", address: "191 Colonel By Dr", walkway: false }),
+      h(4, 208, { id: "c", address: "191 Colonel By Dr", walkway: false }),
+      h(0, -300, { id: "d" }), h(10, -310, { id: "e" }), // no address, 14 m apart
+    ], HOME, null, "en", true);
+    expect(text).toBe(
+      "3 potholes reported within 1 kilometre. Nearest: about 200 metres, in the road, at 235 Nicholas Street. " +
+      "Next: about 200 metres, in the road, at 191 Colonel By Drive. Then: about 300 metres.",
+    );
+  });
+});
+
 describe("spoken details", () => {
   it("distances as people say them", () => {
     expect([roughMetres(4), roughMetres(63), roughMetres(149), roughMetres(372)]).toEqual([10, 60, 150, 350]);
