@@ -264,7 +264,8 @@ export default function WalkMode() {
     }
   }
 
-  /** Say a free-form answer in the walker's chosen voice; "Sorry, I can't tell" if empty. */
+  /** Say a free-form answer in the walker's chosen voice; "Sorry, I can't tell" only if there's no
+   *  answer. If the live voice fails, the answer stays on screen and the phone's own voice says it. */
   const sayAnswer = useCallback(async (text: string, kind: string) => {
     const id = ++speechId.current;
     log("say", `${text || "(no answer)"} (${kind}, asked)`);
@@ -274,7 +275,12 @@ export default function WalkMode() {
         const mp3 = await tts(text, lang, voice, 6000); // answers can be long (three potholes and their streets)
         if (speechId.current === id) await audio.playSpeech(mp3, 0);
         return;
-      } catch { /* live voice failed: fall through */ }
+      } catch (e) {
+        log("info", `live voice failed (${(e as Error).message}): phone voice instead`);
+      }
+      if (speechId.current !== id) return;
+      if (!(await audio.speakText(text, lang))) log("info", "phone voice unavailable: answer shown only");
+      return;
     }
     if (speechId.current !== id) return;
     setShown({ text: lang === "fr" ? "Désolé, je ne peux pas le dire" : "Sorry, I can't tell", level: "info" });

@@ -59,7 +59,39 @@ export class AudioEngine {
   /** Call inside the Start button's tap handler. iOS blocks audio until a user gesture. */
   async unlock() {
     this.ctx ??= new AudioContext();
+    // The phone's own voice (speakText) is also only allowed after speaking once inside a tap
+    try { speechSynthesis.speak(new SpeechSynthesisUtterance("")); } catch { /* no built-in voice */ }
     await this.ctx.resume();
+  }
+
+  private phoneVoice: SpeechSynthesisUtterance | null = null;
+
+  /** Say text with the phone's built-in voice: the fallback when the live voice (ElevenLabs) fails,
+   *  so an answer is still heard. Resolves true when it was spoken, false if it couldn't be. */
+  speakText(text: string, lang: Lang): Promise<boolean> {
+    if (typeof speechSynthesis === "undefined" || typeof SpeechSynthesisUtterance === "undefined") {
+      return Promise.resolve(false);
+    }
+    this.stop();
+    this.stopWorking();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = lang === "fr" ? "fr-CA" : "en-US";
+    this.phoneVoice = u;
+    this.soundStarted();                          // the mic ignores it, like any other SeeWalk voice
+    this.setPlaying(true);
+    return new Promise((resolve) => {
+      const done = (spoken: boolean) => {
+        if (this.phoneVoice !== u) return resolve(spoken); // stop() already tidied up
+        this.phoneVoice = null;
+        this.setPlaying(false);
+        this.soundEnded();
+        resolve(spoken);
+      };
+      u.onend = () => done(true);
+      u.onerror = (e) => done(e.error === "interrupted" || e.error === "canceled");
+      speechSynthesis.cancel();                   // nothing queued ahead of it
+      speechSynthesis.speak(u);
+    });
   }
 
   /** Which voice the bundled clips play in. Call before preload. */
@@ -146,6 +178,12 @@ export class AudioEngine {
     try { this.current?.stop(); } catch { /* already stopped */ }
     if (this.current) this.setPlaying(false);
     this.current = null;
+    if (this.phoneVoice) {
+      this.phoneVoice = null;
+      this.setPlaying(false);
+      this.soundEnded();
+      speechSynthesis.cancel();
+    }
   }
 
   /** A short tone. These cues stay off the "app is speaking" signal so the mic keeps the question. */
