@@ -154,7 +154,6 @@ export default function WalkMode() {
 
   const onResult = useCallback((r: SceneResult) => {
     memory.current.remember(r);
-    reporter.current?.report(r);                 // map it even in voice-only mode
     if (!autoAlertsRef.current) return;          // voice-only mode: stay quiet unless asked
     if (answering.current > 0) return;           // never talk over an answer
     const scene = noticeDoors(r);
@@ -180,7 +179,9 @@ export default function WalkMode() {
     await audio.playClip(lang, e);
   }, [lang]);
 
-  const walk = useWalkLoop({ lang, onResult, onSystem });
+  // Every Gemini answer goes to the map, including question photos and voice-only mode
+  const onScene = useCallback((r: SceneResult) => reporter.current?.report(r), []);
+  const walk = useWalkLoop({ lang, onResult, onSystem, onScene });
   const { videoRef } = walk;
   const walkRef = useRef(walk);
   useLayoutEffect(() => { walkRef.current = walk; });
@@ -330,7 +331,7 @@ export default function WalkMode() {
     const unlocking = audio.unlock();
     getVoice().start(lang);                      // mic permission prompt on first use
     walk.start();                                // runs until Stop, don't await; camera prompt on first use
-    reporter.current = startHazardReporter();    // location prompt on first use (optional)
+    if (!MOCK) reporter.current = startHazardReporter(); // location prompt on first use; fake results never go on the map
     if (autoAlerts) void startFast(++fastGen.current);
     quietSince.current = Date.now();
     lastIdleAt.current = 0;

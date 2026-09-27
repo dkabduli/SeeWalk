@@ -68,8 +68,9 @@ const RESULT: SceneResult = {
 function setup() {
   const onResult = vi.fn<(r: SceneResult) => void>();
   const onSystem = vi.fn<(e: SystemEvent) => void>();
-  const hook = renderHook(() => useWalkLoop({ lang: "en", onResult, onSystem }));
-  return { walk: () => hook.result.current, onResult, onSystem };
+  const onScene = vi.fn<(r: SceneResult) => void>();
+  const hook = renderHook(() => useWalkLoop({ lang: "en", onResult, onSystem, onScene }));
+  return { walk: () => hook.result.current, onResult, onSystem, onScene };
 }
 
 /** Let promises settle and advance fake time. */
@@ -255,6 +256,40 @@ describe("useWalkLoop", () => {
     expect(answer).toEqual({ ok: true, result: RESULT });
     expect(onResult).not.toHaveBeenCalled();
     expect(calls).toHaveLength(1); // no extra request
+  });
+
+  it("the hazard map (onScene) gets a What's ahead? photo the loop doesn't speak", async () => {
+    const { walk, onResult, onScene } = setup();
+    act(() => { void walk().start(); });
+    await tick();
+    act(() => { void walk().checkNow(); });
+    calls[0].resolve(RESULT);            // the asker speaks this one, not the loop...
+    await tick();
+    expect(onResult).not.toHaveBeenCalled();
+    expect(onScene).toHaveBeenCalledWith(RESULT); // ...but it still goes on the map
+  });
+
+  it("the hazard map gets an older answer that is too late to speak", async () => {
+    const { walk, onResult, onScene } = setup();
+    act(() => { void walk().start(); });
+    await tick(800);
+    calls[1].resolve({ ...RESULT, summary: "newer" });
+    await tick();
+    calls[0].resolve(RESULT);            // older than one already spoken
+    await tick();
+    expect(onResult).toHaveBeenCalledTimes(1);
+    expect(onScene).toHaveBeenCalledTimes(2);
+    expect(onScene).toHaveBeenLastCalledWith(RESULT);
+  });
+
+  it("the hazard map gets nothing after Stop", async () => {
+    const { walk, onScene } = setup();
+    act(() => { void walk().start(); });
+    await tick();
+    act(() => walk().stop());
+    calls[0].resolve(RESULT);
+    await tick(5000);
+    expect(onScene).not.toHaveBeenCalled();
   });
 
   it("What's ahead? while waiting takes a snapshot right away", async () => {

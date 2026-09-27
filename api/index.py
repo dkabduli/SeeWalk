@@ -18,12 +18,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "server"))
 from fastapi import FastAPI, Request  # noqa: E402
 from fastapi.responses import JSONResponse, Response  # noqa: E402
 
-from hazards import router as hazards_router  # noqa: E402
 from main import app as server  # noqa: E402
 from ratelimit import RateLimiter  # noqa: E402
 
 log = logging.getLogger("seewalk")
-server.include_router(hazards_router)  # the hazard map (needs DATABASE_URL)
 
 app = FastAPI(title="VisionCompanion (Vercel)")
 limiter = RateLimiter()

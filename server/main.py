@@ -5,6 +5,7 @@
 POST /analyze  snapshot (+ previous) → Gemini → hazards as JSON (SceneResult)
 POST /tts      phrase → ElevenLabs (River) → mp3
 POST /listen   speech clip → Gemini → was it "SeeWalk, what's ahead?"   (listen.py)
+POST /hazards  confident sidewalk hazard + GPS → Tiger Data; GET /hazards, /hazards/hotspots for ?map  (hazards.py)
 POST /detect   Aroha's first endpoint: image → comma-separated object list (debugging)
 GET  /health
 """
@@ -20,6 +21,7 @@ from google.genai import types
 
 import config
 from gemini import analyze_frame
+from hazards import router as hazards_router
 from listen import router as listen_router
 from schemas import AnalyzeRequest, SceneResult, TTSRequest
 from tts import synthesize
@@ -35,6 +37,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(listen_router)
+app.include_router(hazards_router)  # hazard map (answers 503 until DATABASE_URL is set)
 
 
 @app.get("/health")

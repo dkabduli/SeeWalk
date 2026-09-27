@@ -310,10 +310,10 @@ Open the printed `https://….trycloudflare.com` link in Safari on the iPhone (S
 | `ELEVENLABS_API_KEY` | from ElevenLabs |
 | `ELEVENLABS_VOICE_ID` | `SAz9YHcvj6GT2YYXdXww` (River) |
 | `ELEVENLABS_TTS_MODEL` | `eleven_flash_v2_5` |
-| `DATABASE_URL` | Tiger Data connection string (hazard map) |
+| `DATABASE_URL` | Tiger Data connection string (hazard map). Also set it in Vercel → Settings → Environment Variables, then redeploy. First time only: `.venv/bin/python scripts/init_db.py` |
 | `ALLOWED_ORIGINS` | optional |
 
-**Tests:** `cd web && npm test` (phone app) · `cd server && .venv/bin/pytest` (server) · `server/.venv/bin/python server/scripts/eval_samples.py [fr]` runs [`samples/`](samples/) (our own street photos plus freely licensed ones from Wikimedia Commons) through Gemini.
+**Tests:** `cd web && npm test` (phone app) · `cd server && .venv/bin/pytest` (server) · `server/.venv/bin/python server/scripts/eval_samples.py [fr]` runs [`samples/`](samples/) (our own street photos plus freely licensed ones from Wikimedia Commons) through Gemini. `server/.venv/bin/python server/scripts/smoke_hazards.py --base https://visioncompanion.vercel.app/api` saves a test pin in Tiger Data, checks the dedupe and confidence rules, reads it back from `/hazards` and `/hazards/hotspots`, then deletes it (`--base http://localhost:8000` for the laptop server).
 
 ## Repo layout
 
@@ -325,7 +325,7 @@ Open the printed `https://….trycloudflare.com` link in Safari on the iPhone (S
 │   ├── lang_guard.py        # French mode never speaks English; never "clear" / "safe"
 │   ├── tts.py, voices.py    # ElevenLabs live voice, 4 voices
 │   ├── hazards.py, db.py    # hazard map (Tiger Data)
-│   └── scripts/             # check_connections, generate_clips, eval_samples, …
+│   └── scripts/             # check_connections, init_db, smoke_hazards, generate_clips, eval_samples, …
 ├── web/                     # React + Vite + TS phone app
 │   ├── public/              # bundled voice clips, icons, manifest
 │   └── src/

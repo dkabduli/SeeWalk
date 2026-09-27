@@ -23,17 +23,21 @@ interface Options {
   lang: Lang;
   onResult: (result: SceneResult) => void;
   onSystem: (event: SystemEvent) => void;
+  /** Every Gemini answer, spoken or not (question photos, old-language photos too): the hazard map. */
+  onScene?: (result: SceneResult) => void;
 }
 
-export function useWalkLoop({ lang, onResult, onSystem }: Options) {
+export function useWalkLoop({ lang, onResult, onSystem, onScene }: Options) {
   // refs so the running loop always sees the latest props (updated after each render)
   const langRef = useRef(lang);
   const onResultRef = useRef(onResult);
   const onSystemRef = useRef(onSystem);
+  const onSceneRef = useRef(onScene);
   useLayoutEffect(() => {
     langRef.current = lang;
     onResultRef.current = onResult;
     onSystemRef.current = onSystem;
+    onSceneRef.current = onScene;
   });
 
   const camera = useCamera(useCallback(() => onSystemRef.current("camera_blocked"), []));
@@ -173,6 +177,7 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
           return;
         }
         if (!result.unclear) dimUnclear = 0;
+        onSceneRef.current?.(result);
         const waiting = takeAskers(careful);
         // A fast photo can become a street alert. A question photo is spoken by the asker.
         // Sent before a language switch: it's in the old language, so it isn't spoken

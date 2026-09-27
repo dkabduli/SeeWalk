@@ -69,24 +69,31 @@ export default function HazardMap() {
   }, [days, reload]);
 
   // Test the whole path from a phone: GPS → POST /hazards → Tiger Data → pin on this map.
+  // No location (laptop, permission denied): the pin goes in the middle of the map instead.
+  async function saveTestPin(lat: number, lon: number, where: string) {
+    try {
+      const r = await saveReport({
+        session_id: `test-${crypto.randomUUID()}`, lat, lon, type: "pothole", confidence: 1, source: "test",
+      });
+      setPinNote(r.saved ? `Test pin saved (${where}).` : `Not saved: ${r.reason}.`);
+      map.current?.flyTo([lat, lon], 18);
+      setReload((n) => n + 1);
+    } catch (e) {
+      setPinNote((e as Error).message === "map_off" ? "The server has no database." : "Couldn't reach the server.");
+    }
+  }
+
   function dropTestPin() {
-    if (!navigator.geolocation) return setPinNote("This browser has no location.");
+    const atCentre = (why: string) => {
+      const c = map.current?.getCenter();
+      if (c) void saveTestPin(c.lat, c.lng, `${why}: middle of the map`);
+      else setPinNote(why);
+    };
+    if (!navigator.geolocation) return atCentre("No location");
     setPinNote("Finding you…");
     navigator.geolocation.getCurrentPosition(
-      async (p) => {
-        const { latitude: lat, longitude: lon, accuracy } = p.coords;
-        try {
-          const r = await saveReport({
-            session_id: `test-${crypto.randomUUID()}`, lat, lon, type: "pothole", confidence: 1, source: "test",
-          });
-          setPinNote(r.saved ? `Test pin saved (±${Math.round(accuracy)} m).` : `Not saved: ${r.reason}.`);
-          map.current?.flyTo([lat, lon], 18);
-          setReload((n) => n + 1);
-        } catch (e) {
-          setPinNote((e as Error).message === "map_off" ? "The server has no database." : "Couldn't reach the server.");
-        }
-      },
-      (e) => setPinNote(e.code === e.PERMISSION_DENIED ? "Location permission denied." : "Couldn't get your location."),
+      (p) => void saveTestPin(p.coords.latitude, p.coords.longitude, `±${Math.round(p.coords.accuracy)} m`),
+      (e) => atCentre(e.code === e.PERMISSION_DENIED ? "Location denied" : "No location"),
       { enableHighAccuracy: true, timeout: 15_000 },
     );
   }
