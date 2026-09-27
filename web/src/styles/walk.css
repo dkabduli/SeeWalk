@@ -196,19 +196,11 @@
   backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
 }
 .walk .working .wave { display: inline-flex; align-items: center; gap: 3px; height: 22px; }
-.walk .working .wave i {
-  display: block; width: 4px; height: 8px; border-radius: 2px; background: var(--white);
+.walk .working .wave i {       /* heights set every frame from the real sound (audio/Waveform.tsx) */
+  display: block; width: 4px; height: 22px; border-radius: 2px; background: var(--white);
+  transform: scaleY(0.16); transform-origin: center; will-change: transform;
 }
 .walk .working.thinking .wave i { background: var(--red); }
-@media (prefers-reduced-motion: no-preference) {
-  .walk .working .wave i { animation: walk-wave 0.9s ease-in-out infinite; }
-  .walk .working .wave i:nth-child(2) { animation-delay: 0.12s; }
-  .walk .working .wave i:nth-child(3) { animation-delay: 0.24s; }
-  .walk .working .wave i:nth-child(4) { animation-delay: 0.36s; }
-  .walk .working .wave i:nth-child(5) { animation-delay: 0.48s; }
-  .walk .working.thinking .wave i { animation-duration: 0.6s; }
-}
-@keyframes walk-wave { 0%, 100% { height: 6px; } 50% { height: 22px; } }
 
 /* Small iPhones (SE): a bit tighter so the setup fits without scrolling where possible */
 @media (max-height: 700px) {

@@ -1,5 +1,6 @@
 import { listen } from "../api/client";
 import type { Lang, ListenResult } from "../api/types";
+import { bandLevels } from "../audio/levels";
 
 // Voice commands ("SeeWalk, what's ahead / what am I holding / what's blocking my path / read this /
 // is it safe to cross?") without Safari's speech recognition (iOS answers `service-not-allowed`
@@ -174,6 +175,15 @@ export function createVoiceCommand(
   let speaking = false;
   let quietSince = 0;
   let clipperRef: SpeechClipper | null = null;
+  // The mic's loudness per speech band, for the on-screen waveform while the walker talks
+  let micMeter: { node: AnalyserNode; data: Uint8Array<ArrayBuffer>; rate: number } | null = null;
+
+  /** Loudness of five speech bands (low → high, 0..1) the mic hears now; zeros when not listening. */
+  function levels(): number[] {
+    if (!micMeter) return [0, 0, 0, 0, 0];
+    micMeter.node.getByteFrequencyData(micMeter.data);
+    return bandLevels(micMeter.data, micMeter.rate, micMeter.node.fftSize);
+  }
 
   /** Tell the listener when SeeWalk is making sound (AudioEngine.onSounding). */
   function setSpeaking(on: boolean) {
@@ -216,9 +226,17 @@ export function createVoiceCommand(
     }
     const source = ctx.createMediaStreamSource(stream);
     const proc = ctx.createScriptProcessor(4096, 1, 1);
+    // The waveform's meter is optional: if it can't be made, listening works exactly as before
+    let meter: AnalyserNode | null = null;
+    try {
+      meter = ctx.createAnalyser();
+      Object.assign(meter, { fftSize: 512, smoothingTimeConstant: 0.5, minDecibels: -75, maxDecibels: -20 });
+    } catch { meter = null; }
     const cleanup = () => {
       proc.onaudioprocess = null;
+      if (meter && micMeter?.node === meter) micMeter = null;
       source.disconnect();
+      meter?.disconnect();
       proc.disconnect();
       stream.getTracks().forEach((t) => t.stop());
       void ctx.close().catch(() => {});
@@ -254,7 +272,13 @@ export function createVoiceCommand(
       if (held || speaking || Date.now() - quietSince < ECHO_TAIL_MS) { clipper.reset(); return; }
       clipper.push(new Float32Array(e.inputBuffer.getChannelData(0)));
     };
-    source.connect(proc);
+    if (meter) {
+      source.connect(meter); // the meter passes the mic through unchanged
+      meter.connect(proc);
+      micMeter = { node: meter, data: new Uint8Array(meter.frequencyBinCount), rate: ctx.sampleRate };
+    } else {
+      source.connect(proc);
+    }
     proc.connect(ctx.destination); // Safari only runs the processor when it's connected; it outputs silence
     await ctx.resume().catch(() => {});
     onDebug?.(`listening (${ctx.state}, ${ctx.sampleRate} Hz)`);
@@ -265,5 +289,5 @@ export function createVoiceCommand(
     session = null;
   }
 
-  return { supported, start, stop, setSpeaking, hold };
+  return { supported, start, stop, setSpeaking, hold, levels };
 }

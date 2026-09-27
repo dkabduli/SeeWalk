@@ -1,5 +1,6 @@
 import type { Lang } from "../api/types";
 import clips from "./clips.json";
+import { bandLevels } from "./levels";
 import { clipUrl, DEFAULT_VOICE, type VoiceId } from "./voices";
 
 export class AudioEngine {
@@ -8,6 +9,41 @@ export class AudioEngine {
   private buffers = new Map<string, AudioBuffer>();
   private current: AudioBufferSourceNode | null = null;
   private sounding = 0;
+  // Voice playback passes through this meter on its way out, for the on-screen waveform.
+  private meter: AnalyserNode | null = null;
+  private meterData: Uint8Array<ArrayBuffer> | null = null;
+  private playingListeners = new Set<(on: boolean) => void>();
+
+  /** Told when a voice (clip or live speech) starts and stops playing. Returns the unsubscribe. */
+  onPlaying(listener: (on: boolean) => void): () => void {
+    this.playingListeners.add(listener);
+    return () => this.playingListeners.delete(listener);
+  }
+  private setPlaying(on: boolean) {
+    this.playingListeners.forEach((l) => l(on));
+  }
+
+  /** Loudness of five speech bands (low → high, 0..1) of the voice playing now; zeros when silent. */
+  levels(): number[] {
+    if (!this.meter || !this.meterData || !this.ctx) return [0, 0, 0, 0, 0];
+    this.meter.getByteFrequencyData(this.meterData);
+    return bandLevels(this.meterData, this.ctx.sampleRate, this.meter.fftSize);
+  }
+
+  /** Where voices play to: through the waveform's meter, or straight out if it can't be made. */
+  private output(): AudioNode {
+    const ctx = this.ctx!;
+    if (!this.meter) {
+      try {
+        this.meter = new AnalyserNode(ctx, { fftSize: 512, smoothingTimeConstant: 0.55, minDecibels: -80, maxDecibels: -22 });
+        this.meterData = new Uint8Array(this.meter.frequencyBinCount);
+        this.meter.connect(ctx.destination); // passes the sound through unchanged
+      } catch {
+        return ctx.destination; // the voice still plays; the bars just stay flat
+      }
+    }
+    return this.meter;
+  }
 
   /** Called with true when SeeWalk starts making sound and false when it stops, so the voice
    *  command can stop listening meanwhile (the mic otherwise hears SeeWalk's own voice). */
@@ -62,6 +98,7 @@ export class AudioEngine {
 
   stop() {
     try { this.current?.stop(); } catch { /* already stopped */ }
+    if (this.current) this.setPlaying(false);
     this.current = null;
   }
 
@@ -154,12 +191,16 @@ export class AudioEngine {
     this.ensureRunning();
     const ctx = this.ctx!;
     const src = new AudioBufferSourceNode(ctx, { buffer });
-    src.connect(new StereoPannerNode(ctx, { pan })).connect(ctx.destination);
+    src.connect(new StereoPannerNode(ctx, { pan })).connect(this.output());
     this.current = src;
     this.soundStarted();
+    this.setPlaying(true);
     return new Promise((resolve) => {
       src.onended = () => {
-        if (this.current === src) this.current = null;
+        if (this.current === src) {
+          this.current = null;
+          this.setPlaying(false); // not when a newer voice took over (it said true already)
+        }
         this.soundEnded();
         resolve();
       };

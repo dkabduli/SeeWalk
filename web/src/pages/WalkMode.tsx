@@ -7,6 +7,7 @@ import { describeAhead, describePath, fallbackClip, noteSpoken, noticeDoors, pan
 import { audio } from "../audio/AudioEngine";
 import clips from "../audio/clips.json";
 import { loadVoice, saveVoice, VOICES, type VoiceId } from "../audio/voices";
+import { Waveform } from "../audio/Waveform";
 import { captureFrame } from "../camera/captureFrame";
 import { useWalkLoop } from "../camera/useWalkLoop";
 import { createVoiceCommand } from "../camera/voiceCommand";
@@ -47,9 +48,13 @@ export default function WalkMode() {
   // Street alerts: holes, edges, steps, doors and pillars in the corridor, signs, work zones.
   // A chair or a thin pole stays quiet until the walker asks.
   const [autoAlerts, setAutoAlerts] = useState(true);
-  // Siri-style indicator: "listening" while a spoken clip is checked, "thinking" while an answer
-  // is prepared. Blind users get the same information as sound (a chirp, then a soft pulse).
-  const [busy, setBusy] = useState<"idle" | "listening" | "thinking">("idle");
+  // Siri-style indicator with live bars: "hearing" while the walker asks (bars follow the mic),
+  // "thinking" while the answer is prepared, "speaking" while the voice talks (bars follow it).
+  // Blind users get the same information as sound (a chime, then a soft pulse if it's slow).
+  const [busy, setBusy] = useState<"idle" | "hearing" | "thinking" | "speaking">("idle");
+  const hearing = useRef(false);
+  const hearingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const playing = useRef(false);
   const autoAlertsRef = useRef(autoAlerts);
   useLayoutEffect(() => { autoAlertsRef.current = autoAlerts; });
   const t = strings[lang];
@@ -191,7 +196,22 @@ export default function WalkMode() {
   // snapshots to Gemini, no automatic alerts, no new listening. Then it all resumes.
   const updatePause = () => walkRef.current?.setPaused(checkingVoice.current || answering.current > 0);
   const refreshBusy = () =>
-    setBusy(answering.current > 0 ? "thinking" : checkingVoice.current ? "listening" : "idle");
+    setBusy(
+      playing.current ? "speaking"
+        : answering.current > 0 || checkingVoice.current ? "thinking"
+        : hearing.current ? "hearing"
+        : "idle",
+    );
+  const setHearing = (on: boolean) => {
+    hearing.current = on;
+    if (hearingTimer.current) clearTimeout(hearingTimer.current);
+    // A clip ends within 4 s; if the words stopped short of a question, let the bars go
+    hearingTimer.current = on ? setTimeout(() => setHearing(false), 4500) : null;
+    refreshBusy();
+  };
+  const refreshBusyRef = useRef(refreshBusy);
+  useLayoutEffect(() => { refreshBusyRef.current = refreshBusy; });
+  useEffect(() => audio.onPlaying((on) => { playing.current = on; refreshBusyRef.current(); }), []);
   async function answeringQuestion(work: () => Promise<void>) {
     answering.current++;
     speechId.current++;                          // cancel anything SeeWalk was in the middle of saying
@@ -225,6 +245,7 @@ export default function WalkMode() {
         () => { const v = videoRef.current; return v ? captureFrame(v)?.b64 ?? null : null; },
         (checking) => {
           checkingVoice.current = checking;
+          if (checking) hearing.current = false; // the question is over; refreshBusy below
           updatePause();
           if (checking) {
             audio.playDone();                     // question finished: falling chime, then the answer
@@ -236,7 +257,7 @@ export default function WalkMode() {
           refreshBusy();
         },
         () => walkRef.current?.releaseLook(),    // not a command: speak that photo as a normal alert
-        () => audio.playWake(),                  // name heard: louder rising chime, they keep talking
+        () => { audio.playWake(); setHearing(true); }, // name heard: rising chime, bars follow their voice
       );
       audio.onSounding = (on) => voice.setSpeaking(on);
       voiceRef.current = voice;
@@ -256,6 +277,7 @@ export default function WalkMode() {
       audio.stop();
       setShown(null);
       audio.stopWorking();
+      setHearing(false);
       setBusy("idle");
       setWalking(false);
       setStatus("idle");
@@ -396,6 +418,9 @@ export default function WalkMode() {
     }
   }
 
+  const voiceName = VOICES.find((v) => v.id === voice)?.name ?? "River";
+  const micLevels = () => voiceRef.current?.levels() ?? [0, 0, 0, 0, 0];
+
   return (
     <main className={`walk ${walking ? "is-walking" : "is-idle"}`}>
       <header className="bar">
@@ -408,12 +433,17 @@ export default function WalkMode() {
 
       <div className="viewfinder">
         <video ref={videoRef} playsInline muted autoPlay aria-hidden="true" />
-        {walking && busy !== "idle" && (
-          <div className={`working ${busy}`} role="status" aria-label={busy === "thinking" ? t.thinking : t.listeningNow}>
-            <span className="wave" aria-hidden="true"><i /><i /><i /><i /><i /></span>
-            <span>{busy === "thinking" ? t.thinking : t.listeningNow}</span>
-          </div>
-        )}
+        {walking && busy !== "idle" && (() => {
+          const label = busy === "speaking" ? voiceName : busy === "thinking" ? t.thinking : t.listeningNow;
+          // Speaking: the voice itself is the news, so VoiceOver shouldn't say "River" over it
+          const a11y = busy === "speaking" ? { "aria-hidden": true } : { role: "status", "aria-label": label };
+          return (
+            <div className={`working ${busy}`} {...a11y}>
+              <Waveform mode={busy} levels={busy === "hearing" ? micLevels : audio.levels.bind(audio)} />
+              <span>{label}</span>
+            </div>
+          );
+        })()}
       </div>
 
       {!walking && (

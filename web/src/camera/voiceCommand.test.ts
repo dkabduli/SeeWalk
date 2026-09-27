@@ -108,7 +108,17 @@ class FakeAudioContext {
   close() { closed++; return Promise.resolve(); }
   createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
   createScriptProcessor() { proc = new FakeProcessor(); return proc; }
+  createAnalyser() {
+    if (!analyserWorks) throw new Error("no analyser");
+    return {
+      fftSize: 512, frequencyBinCount: 256,
+      connect() {}, disconnect() {},
+      getByteFrequencyData(out: Uint8Array) { out.fill(micLoudness); },
+    };
+  }
 }
+let analyserWorks = true;
+let micLoudness = 0;
 const track = { stop: vi.fn() };
 let grantMic: () => void;
 let micMode: "grant" | "deny" | "manual" = "grant";
@@ -118,6 +128,8 @@ beforeEach(() => {
   closed = 0;
   track.stop.mockClear();
   micMode = "grant";
+  analyserWorks = true;
+  micLoudness = 0;
   vi.stubGlobal("AudioContext", FakeAudioContext);
   Object.defineProperty(navigator, "mediaDevices", {
     configurable: true,
@@ -219,6 +231,31 @@ describe("createVoiceCommand", () => {
     listenCalls[0].resolve({ heard: "SeeWalk, what's ahead?", intent: "whats_ahead", answer: "", command: true });
     await flush();
     expect(onCommand).not.toHaveBeenCalled();
+  });
+
+  it("the waveform follows the mic while listening and goes flat after Stop", async () => {
+    const voice = createVoiceCommand(vi.fn());
+    expect(voice.levels()).toEqual([0, 0, 0, 0, 0]);  // not listening yet
+    voice.start("en");
+    await flush();
+    micLoudness = 200;                                  // the walker talks
+    voice.levels().forEach((v) => expect(v).toBeCloseTo(200 / 255, 5));
+    voice.stop();
+    expect(voice.levels()).toEqual([0, 0, 0, 0, 0]);
+  });
+
+  it("voice commands still work if the waveform's meter can't be made", async () => {
+    analyserWorks = false;
+    const onCommand = vi.fn();
+    const voice = createVoiceCommand(onCommand);
+    voice.start("en");
+    await flush();
+    await say();
+    expect(listenCalls).toHaveLength(1);
+    listenCalls[0].resolve({ heard: "SeeWalk, what's ahead?", intent: "whats_ahead", answer: "", command: true });
+    await flush();
+    expect(onCommand).toHaveBeenCalledTimes(1);
+    expect(voice.levels()).toEqual([0, 0, 0, 0, 0]);   // just no bars
   });
 
   it("stop() during the mic permission prompt releases the mic when it's granted", async () => {
