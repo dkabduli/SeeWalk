@@ -78,6 +78,13 @@ export default function WalkMode() {
   const [recent, setRecent] = useState<string[]>([]);
   const [glow, setGlow] = useState<{ side: Hazard["direction"]; level: Shown["level"]; id: number } | null>(null);
   const lastAlert = useRef<string | null>(null);
+  // Long answers ("read this") show 4 lines and scroll; a fade at the bottom says there's more
+  const textRef = useRef<HTMLSpanElement | null>(null);
+  const [more, setMore] = useState(false);
+  const checkMore = () => {
+    const el = textRef.current;
+    setMore(!!el && el.scrollHeight - el.scrollTop - el.clientHeight > 2);
+  };
   const showAlert = useCallback((next: Shown & { direction: Hazard["direction"] }) => {
     const prev = lastAlert.current;
     if (prev && prev !== next.text) {
@@ -87,6 +94,11 @@ export default function WalkMode() {
     setShown(next);
     setGlow((g) => ({ side: next.direction, level: next.level, id: (g?.id ?? 0) + 1 }));
   }, []);
+  useLayoutEffect(() => {
+    const el = textRef.current;
+    if (el) el.scrollTop = 0;                    // each new answer starts at the top
+    checkMore();
+  }, [shown]);
   useEffect(() => {
     if (!glow) return;
     const t = setTimeout(() => setGlow(null), 1700);
@@ -512,7 +524,7 @@ export default function WalkMode() {
           aria-live="polite"
         >
           {shown?.direction && <span className="arrow" aria-hidden="true">{ARROW[shown.direction]}</span>}
-          <span className="text">{shown?.text ?? t.introShort}</span>
+          <span className={`text${more ? " more" : ""}`} ref={textRef} onScroll={checkMore}>{shown?.text ?? t.introShort}</span>
           {recent.length > 0 && (shown?.text.length ?? 0) <= 40 && (
             <span className="recent" aria-hidden="true">{recent.join(" · ")}</span>
           )}
