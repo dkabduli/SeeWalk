@@ -364,28 +364,25 @@ export default function WalkMode() {
     });
   }
 
-  async function pickVoice(id: VoiceId) {
+  // Voice cards: the sample starts first thing in the tap (iOS allows media only inside it)
+  const SAMPLE = "st_stop_sign_right"; // "Stop sign on your right", in every voice and language
+  function playSample(id: VoiceId) {
+    audio.previewClip(id, lang, SAMPLE)
+      .then(() => log("info", `voice sample ${id} played`))
+      .catch((e: Error) => log("info", `voice sample ${id} failed: ${e.name}: ${e.message}`));
+  }
+
+  /** Tap a card: choose this voice for the walk, and hear it. */
+  function pickVoice(id: VoiceId) {
+    playSample(id);
     setVoice(id);
     saveVoice(id);
     audio.setVoice(id);
-    await audio.unlock();
-    // One street line, so the walker hears this voice before the walk. The clip if we have it
-    // (the same recording the alerts use); otherwise a live reading in this voice.
-    const sample = "st_door_ahead";
-    await audio.preload(lang, (k) => k === sample);
-    if (audio.hasClip(lang, sample)) {
-      await audio.playClip(lang, sample);
-      return;
-    }
-    try {
-      const mp3 = await tts(lang === "fr" ? "Porte devant" : "Door ahead", lang, id, 6000);
-      await audio.playSpeech(mp3, 0);
-    } catch { /* the walk still uses this voice */ }
   }
 
-  /** ▶ on a voice card: hear that voice say a street alert, without choosing it. */
+  /** ▶ on a card: hear that voice, without choosing it. */
   function previewVoice(id: VoiceId) {
-    void audio.previewClip(id, lang, "st_stop_sign_right").catch(() => {});
+    playSample(id);
   }
 
   async function whatsAhead() {
