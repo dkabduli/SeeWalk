@@ -12,6 +12,7 @@ import { captureFrame } from "../camera/captureFrame";
 import { useWalkLoop } from "../camera/useWalkLoop";
 import { createVoiceCommand } from "../camera/voiceCommand";
 import { sendToLaptop } from "../debug/laptopLog";
+import { startHazardReporter, type HazardReporter } from "../map/hazardReporter";
 import { strings } from "../i18n/strings";
 import "../styles/walk.css";
 
@@ -148,8 +149,12 @@ export default function WalkMode() {
     }
   }, [lang, voice, showAlert]);
 
+  // Hazard map (Tiger Data): confident, GPS-tagged sidewalk hazards. Fire and forget.
+  const reporter = useRef<HazardReporter | null>(null);
+
   const onResult = useCallback((r: SceneResult) => {
     memory.current.remember(r);
+    reporter.current?.report(r);                 // map it even in voice-only mode
     if (!autoAlertsRef.current) return;          // voice-only mode: stay quiet unless asked
     if (answering.current > 0) return;           // never talk over an answer
     const scene = noticeDoors(r);
@@ -304,6 +309,8 @@ export default function WalkMode() {
       fastStop.current?.();
       fastStop.current = null;
       walk.stop();
+      reporter.current?.stop();
+      reporter.current = null;
       getVoice().stop();
       speechId.current++;                        // cancel any alert still on its way
       audio.stop();
@@ -323,6 +330,7 @@ export default function WalkMode() {
     const unlocking = audio.unlock();
     getVoice().start(lang);                      // mic permission prompt on first use
     walk.start();                                // runs until Stop, don't await; camera prompt on first use
+    reporter.current = startHazardReporter();    // location prompt on first use (optional)
     if (autoAlerts) void startFast(++fastGen.current);
     quietSince.current = Date.now();
     lastIdleAt.current = 0;

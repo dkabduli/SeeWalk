@@ -26,7 +26,7 @@ flowchart TB
 
 ### How the pieces talk (Gemini, ElevenLabs, Tiger Data)
 
-![How VisionCompanion works: the phone sends a snapshot every 0.8 s to the server, Gemini returns hazards, the phone plays a pre-recorded ElevenLabs clip; questions go through Gemini and ElevenLabs Flash live; the Tiger Data hazard map is built but not connected](docs/img/how-it-works.svg)
+![How VisionCompanion works: the phone sends a snapshot every 0.8 s to the server, Gemini returns hazards, the phone plays a pre-recorded ElevenLabs clip; questions go through Gemini and ElevenLabs Flash live; confident sidewalk hazards go to the Tiger Data hazard map with GPS and time](docs/img/how-it-works.svg)
 
 Regenerate after changing the flow: `python3 docs/img/make_how_it_works.py`.
 
@@ -192,7 +192,7 @@ Alternatives we measured and rejected:
 | **Web Audio API** | Panned tones, clips, live voice, waveform meters | `web/src/audio/` | ✅ |
 | **Vercel** | Hosting: the app + the Python server, a permanent HTTPS link, firewall rate limit | `vercel.json`, `api/index.py` | ✅ https://visioncompanion.vercel.app |
 | **cloudflared** | HTTPS tunnel to a laptop (the backup) | — | ✅ |
-| **Tiger Data** + **Leaflet** | Hazard map: reported hazards with GPS over time | `server/hazards.py`, `server/db.py`, `web/src/pages/HazardMap.tsx` (`?map`) | code built, **not connected** (no `DATABASE_URL`) |
+| **Tiger Data** + **Leaflet** | Hazard map: reported hazards with GPS over time | `server/hazards.py`, `server/db.py`, `web/src/pages/HazardMap.tsx` (`?map`) | ✅ connected: Tiger Cloud hypertable, pins at `?map` |
 | **TensorFlow.js COCO-SSD** | On-device people/bikes/cars (~30 ms) | `web/src/detection/` | built, switched off (`PEOPLE_ALERTS`) |
 | **Vultr + Caddy** | Alternative hosting | `deploy/` | scripts only; we use Vercel |
 
@@ -218,7 +218,7 @@ Hack the Hill III. The live phone link is [https://visioncompanion.vercel.app](h
 | **GitHub** | The repo judges will open | **Live.** [dkabduli/VisionCompanion](https://github.com/dkabduli/VisionCompanion) |
 | **Wikimedia Commons** | Freely licensed street photos in [`samples/`](samples/), beside our own | **Used** by `server/scripts/eval_samples.py` |
 | **Leaflet** + **OpenStreetMap** | Hazard map at `?map` | **Built.** Pins need a database |
-| **Tiger Data** (PostgreSQL hypertables) | Store reported hazards with time and GPS | **Code written** (`server/hazards.py`, `server/db.py`). **Not connected:** no `DATABASE_URL` yet |
+| **Tiger Data** (PostgreSQL hypertables) | Store reported hazards with time and GPS | **Live.** Walks save confident potholes, curbs, construction and obstacles with GPS; `?map` shows pins and the most-reported spots |
 | **TensorFlow.js COCO-SSD** | On-device people, bikes and cars | **Built, switched off** (`PEOPLE_ALERTS`). Those alerts flooded the walker in testing |
 | **Vultr** + **Caddy** | A virtual-machine host we scripted first | **Scripts only** (`deploy/`). The running app is on Vercel |
 | **GoDaddy Registry** | A lasting domain name for the live app | **Not set up yet.** Next, before submit |
@@ -250,7 +250,6 @@ Sunday Sept 27. Feature freeze is **1:00 AM EDT** (bugs only after that). Submit
 | **Demo video, about 2 minutes** | Script: [docs/demo-script.md](docs/demo-script.md). Shot list: [docs/shot-list.md](docs/shot-list.md). Film outside in daylight if Saturday's light is gone: Sunday 7–8 AM |
 | **Devpost** | Four names (Abdul, Aroha, Jibril, Siddig), the video, this GitHub repo, and [https://visioncompanion.vercel.app](https://visioncompanion.vercel.app) |
 | **GoDaddy domain** | Point a Registry domain at the Vercel app so the link has a real name. Prize target in the original spec: Best Domain Name |
-| **Tiger Data** | Put `DATABASE_URL` in Vercel and the map starts recording. The page and the API are already written. Prize target: Best Use of Tiger Data |
 | **Live demo at the table** | Read this, what am I holding, what's blocking my path, what's ahead, and the cross refusal. The video shows the walk; the table shows the questions |
 
 Prize targets from [`SEEWALK_SPEC.md`](SEEWALK_SPEC.md) that this build is aimed at: **Best Use of Gemini API**, **Best Use of ElevenLabs**, **Best UI/UX**. **Best Use of Tiger Data** and **Best Domain Name (GoDaddy)** are the two still open. Vultr was the first hosting plan; Vercel is what is actually serving the phone.

@@ -18,7 +18,7 @@ LANES = {
     "server": (570, "Our server", "FastAPI on the laptop", TEXT, False),
     "gemini": (800, "Gemini", "3.5 Flash-Lite", "#8ab4f8", False),
     "eleven": (1030, "ElevenLabs", "River + 3 more voices", AMBER, False),
-    "tiger": (1250, "Tiger Data", "built, not connected", PLANNED, True),
+    "tiger": (1250, "Tiger Data", "PostgreSQL hypertable", "#6fcf97", False),
 }
 
 # Rows: ("section", number, title, planned?) | ("msg", from, to, label, style) | ("note", lane, text, width)
@@ -42,9 +42,10 @@ ROWS = [
     ("msg", "phone", "walker", "the answer, in River's voice", "out"),
     ("section", "3", "Once, ahead of time", False),
     ("msg", "eleven", "phone", "Multilingual v2 → 148 River clips + 110 each for Alice, Charlie, Moyo (EN + FR), bundled: alerts play instantly", "res"),
-    ("section", "4", "Hazard map: code built, waiting for a database connection", True),
-    ("msg", "server", "tiger", "hazard + GPS + time → hypertable", "plan"),
-    ("msg", "tiger", "phone", "map of reported potholes and curbs", "plan"),
+    ("section", "4", "Hazard map: confident sidewalk hazards, saved with GPS and time (no photos)", False),
+    ("msg", "phone", "server", "POST /hazards · pothole, curb… ≥ 0.7 + GPS", "req"),
+    ("msg", "server", "tiger", "hypertable row (deduped: 15 m, 5 min)", "req"),
+    ("msg", "tiger", "phone", "?map: pins + most-reported spots", "res"),
 ]
 
 HEAD_Y, HEAD_H = 92, 66
@@ -108,7 +109,7 @@ for key, (x, name, detail, colour, planned) in LANES.items():
 text(24, 44, "How VisionCompanion works", 28, TEXT, "start", 700)
 text(24, 72, "The phone sees, Gemini understands, ElevenLabs speaks. Gemini and ElevenLabs times measured from our laptop, Sept 2026.", 14.5, MUTED, "start")
 ly = H - 26
-legend = [(TEXT, "", "request"), (STEEL, ' stroke-dasharray="6 5"', "response"), (AMBER, "", "what the walker hears"), (PLANNED, ' stroke-dasharray="6 5"', "not connected yet")]
+legend = [(TEXT, "", "request"), (STEEL, ' stroke-dasharray="6 5"', "response"), (AMBER, "", "what the walker hears")]
 lx = 24
 for colour, dash, name in legend:
     w = 3 if colour == AMBER else 1.8
