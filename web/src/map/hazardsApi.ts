@@ -35,6 +35,13 @@ export interface Hotspot {
   last_seen: string;
 }
 
+/** 503 means one of two things: no DATABASE_URL ("map_off"), or the database didn't answer ("db_down"). */
+async function failure(r: Response, what: string): Promise<Error> {
+  if (r.status !== 503) return new Error(`${what} ${r.status}`);
+  const detail = await r.json().then((d: { detail?: string }) => d.detail ?? "", () => "");
+  return new Error(detail.includes("not set") ? "map_off" : "db_down");
+}
+
 /** Fire and forget: the walk never waits on the map. keepalive lets it finish if the page closes. */
 export function sendReport(report: HazardReport): Promise<void> {
   return fetch(`${BASE}/hazards`, {
@@ -52,13 +59,13 @@ export async function saveReport(report: HazardReport): Promise<{ saved: boolean
     headers: { "content-type": "application/json" },
     body: JSON.stringify(report),
   });
-  if (!r.ok) throw new Error(r.status === 503 ? "map_off" : `hazards ${r.status}`);
+  if (!r.ok) throw await failure(r, "hazards");
   return r.json();
 }
 
 async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
   const r = await fetch(`${BASE}${path}`, { signal });
-  if (!r.ok) throw new Error(r.status === 503 ? "map_off" : `hazards ${r.status}`);
+  if (!r.ok) throw await failure(r, "hazards");
   return r.json();
 }
 
@@ -112,6 +119,6 @@ export async function fetchBriefing(lat: number, lon: number, lang: Lang, signal
     body: JSON.stringify({ lat, lon, lang }),
     signal,
   });
-  if (!r.ok) throw new Error(r.status === 503 ? "map_off" : `briefing ${r.status}`);
+  if (!r.ok) throw await failure(r, "briefing");
   return r.json() as Promise<{ text: string; count: number; by: "gemini" | "plain" }>;
 }

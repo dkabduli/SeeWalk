@@ -28,7 +28,10 @@ const RANGES = [{ days: 1, label: "Today" }, { days: 7, label: "7 days" }, { day
 const HOME: L.LatLngTuple = [45.4231, -75.6831]; // uOttawa
 const REFRESH_MS = 15_000;
 
-type Status = "loading" | "ready" | "map_off" | "error";
+const serverTrouble = (m: string) =>
+  m === "map_off" ? "The server has no database." : m === "db_down" ? "The hazard database isn't answering." : "Couldn't reach the server.";
+
+type Status = "loading" | "ready" | "map_off" | "db_down" | "error";
 
 function ago(iso: string) {
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
@@ -80,7 +83,7 @@ export default function HazardMap() {
     const load = () =>
       Promise.all([fetchHazards(days, ctrl.signal), fetchHotspots(days, ctrl.signal)])
         .then(([h, s]) => { setHazards(h); setHotspots(s); setStatus("ready"); })
-        .catch((e: Error) => { if (!ctrl.signal.aborted) setStatus(e.message === "map_off" ? "map_off" : "error"); });
+        .catch((e: Error) => { if (!ctrl.signal.aborted) setStatus(e.message === "map_off" || e.message === "db_down" ? e.message : "error"); });
     load();
     const timer = setInterval(load, REFRESH_MS);
     return () => { ctrl.abort(); clearInterval(timer); };
@@ -97,7 +100,7 @@ export default function HazardMap() {
       map.current?.flyTo([lat, lon], 18);
       setReload((n) => n + 1);
     } catch (e) {
-      setPinNote((e as Error).message === "map_off" ? "The server has no database." : "Couldn't reach the server.");
+      setPinNote(serverTrouble((e as Error).message));
     }
   }
 
@@ -125,7 +128,7 @@ export default function HazardMap() {
     const ctrl = new AbortController();
     fetchCityReports({ south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() }, ctrl.signal)
       .then((r) => { setCity(r); setCityNote(""); })
-      .catch((e: Error) => { if (!ctrl.signal.aborted) setCityNote(e.message === "map_off" ? "" : "Couldn't load the city's reports."); });
+      .catch((e: Error) => { if (!ctrl.signal.aborted) setCityNote(e.message === "map_off" || e.message === "db_down" ? "" : "Couldn't load the city's reports."); });
     return () => ctrl.abort();
   }, [view, showCity, reload]);
 
@@ -164,7 +167,7 @@ export default function HazardMap() {
       const b = await fetchBriefing(c.lat, c.lng, "en");
       setBrief(b.text + (b.by === "gemini" ? " (Gemini, from the reports)" : ""));
     } catch (e) {
-      setBrief((e as Error).message === "map_off" ? "The server has no database." : "Couldn't reach the server.");
+      setBrief(serverTrouble((e as Error).message));
     }
   }
 
@@ -198,6 +201,7 @@ export default function HazardMap() {
   const message =
     status === "loading" ? "Loading hazards…" :
     status === "map_off" ? "Hazard map is off: the server has no DATABASE_URL." :
+    status === "db_down" ? "The hazard database isn't answering. Retrying…" :
     status === "error" ? "Can't reach the server. Retrying…" :
     hazards.length === 0 && city.length === 0 ? "Nothing reported here in this period yet. Take a walk!" : null;
 
