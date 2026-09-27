@@ -1,16 +1,18 @@
-/* Walk Mode. Colours come from the white cane itself: near-black, white, and the red tip.
-   Flat, high contrast, readable in sunlight and on camera; no decorative gradients or motion.
+/* Walk Mode. Black, greys and white with red as the accent (the red tip of a white cane), on glass
+   panels. Red / amber keep their meaning (urgent / warning). High contrast, readable in sunlight.
    The screen covers the whole page (fixed), so the global page background doesn't show. */
 .walk {
   --bg: #0f1113;
-  --panel: #1a1d21;
-  --line: #2e3238;
-  --text: #f4f2ed;
-  --muted: #a3a8ae;
+  --panel: rgb(28 28 30 / 0.74);
+  --line: rgb(255 255 255 / 0.09);
+  --text: #f5f5f7;
+  --muted: #a1a1a6;
   --white: #ffffff;
-  --red: #e0362c;      /* cane tip: urgent, Stop */
-  --amber: #f3b21b;    /* warning */
-  --steel: #7d8ea3;    /* information */
+  --grey: #c7c7cc;     /* selected, highlights */
+  --grey-dim: #6e6e73;
+  --red: #ff4b4b;      /* cane tip: the accent; urgent, Stop */
+  --amber: #ffb547;    /* warning */
+  --steel: var(--grey);
 
   position: fixed; inset: 0; overflow-y: auto;
   -webkit-overflow-scrolling: touch; overscroll-behavior: contain; /* smooth, no rubber-banding the page behind */
@@ -18,8 +20,13 @@
   --pad-x: 14px;
   --pad-bottom: max(14px, env(safe-area-inset-bottom));
   padding: max(12px, env(safe-area-inset-top)) var(--pad-x) var(--pad-bottom);
-  background: var(--bg); color: var(--text);
-  font: 17px/1.35 -apple-system, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+  background:
+    radial-gradient(120% 60% at 0% 0%, rgb(255 75 75 / 0.16), transparent 60%),
+    radial-gradient(100% 60% at 100% 100%, rgb(255 255 255 / 0.07), transparent 60%),
+    var(--bg);
+  background-attachment: fixed;
+  color: var(--text);
+  font: 17px/1.35 "Figtree", -apple-system, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 .walk button { font: inherit; border: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; }
@@ -44,7 +51,7 @@
 .walk .listen-for { margin: 0; font-size: 15px; font-weight: 600; color: var(--muted); }
 .walk .status::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
 .walk .status.walking { color: var(--text); }
-.walk .status.walking::before { background: #3ecf6e; }
+.walk .status.walking::before { background: var(--red); box-shadow: 0 0 10px var(--red); }
 .walk .status.noConn, .walk .status.blocked { color: var(--red); }
 .walk .status.noConn::before, .walk .status.blocked::before { background: var(--red); }
 .walk .setting {
@@ -52,18 +59,18 @@
   padding-top: 14px; border-top: 1px solid var(--line); font-size: 15px; color: var(--muted);
 }
 .walk .auto {
-  min-width: 64px; padding: 8px 14px; border-radius: 10px; background: var(--panel); color: var(--text);
+  min-width: 64px; padding: 8px 14px; border-radius: 999px; background: var(--panel); color: var(--text);
   font-size: 15px; font-weight: 700; border: 1px solid var(--line);
 }
-.walk .auto.on { color: var(--bg); background: var(--amber); border-color: var(--amber); }
+.walk .auto.on { color: var(--bg); background: var(--white); border-color: var(--white); }
 .walk .lang {
-  padding: 8px 12px; border-radius: 10px; background: var(--panel); color: var(--text);
+  padding: 8px 14px; border-radius: 999px; background: var(--panel); color: var(--text);
   font-size: 15px; font-weight: 600; border: 1px solid var(--line);
 }
 
 /* Camera. Idle: the setup instructions sit on top of it. */
 .walk .viewfinder {
-  position: relative; border-radius: 16px; overflow: hidden;
+  position: relative; border-radius: 24px; overflow: hidden;
   background: #000; border: 1px solid var(--line);
   flex: 1; min-height: 200px;        /* the camera gets all the space that's left */
 }
@@ -73,7 +80,8 @@
 .walk .viewfinder video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .walk .setup {            /* before Start: part of the page's single scroll, no scroll box of its own */
   flex: 1; display: flex; flex-direction: column; gap: 20px;
-  padding: 22px 20px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line);
+  padding: 22px 20px; border-radius: 24px; background: var(--panel); border: 1px solid var(--line);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
 }
 /* centred when it fits the screen; otherwise it simply flows and the page scrolls */
 .walk .setup > :first-child { margin-top: auto; }
@@ -90,7 +98,7 @@
 .walk .setup ol > li::before {
   content: counter(step); width: 26px; height: 26px; border-radius: 50%;
   display: grid; place-items: center; font-size: 14px; font-weight: 800;
-  background: var(--white); color: var(--bg);
+  background: var(--red); color: var(--white);
 }
 
 /* The alert panel: what SeeWalk just said, where, and how serious (colour bar) */
@@ -98,7 +106,8 @@
   display: grid; grid-template-columns: 64px 1fr; align-items: center; gap: 12px;
   min-height: 96px; padding: 12px 16px 12px 12px;
   background: var(--panel); border: 1px solid var(--line); border-left: 8px solid var(--line);
-  border-radius: 14px;
+  border-radius: 20px;
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
 }
 .walk .alert .arrow { font-size: 52px; font-weight: 800; line-height: 1; text-align: center; }
 .walk .alert.no-arrow { grid-template-columns: 1fr; padding-left: 18px; }
@@ -119,8 +128,9 @@
 .walk .alert.urgent .arrow { color: var(--red); }
 .walk .alert.warning { border-left-color: var(--amber); }
 .walk .alert.warning .arrow { color: var(--amber); }
-.walk .alert.info    { border-left-color: var(--steel); }
-.walk .alert.system  { border-left-color: var(--red); background: #2a1715; }
+.walk .alert.info    { border-left-color: var(--grey); }
+.walk .alert.info .arrow { color: var(--grey); }
+.walk .alert.system  { border-left-color: var(--red); background: rgb(255 75 75 / 0.12); }
 
 /* Controls. Walking: the big "What's ahead?" target fills the bottom of the screen. */
 /* Before Start the setup scrolls under a solid bar that holds the Start button. The bar runs edge
@@ -142,20 +152,22 @@
 }
 .walk .start {
   display: block; width: 100%;
-  min-height: 84px; border-radius: 16px; background: var(--white); color: var(--bg);
+  min-height: 84px; border-radius: 22px; background: var(--white); color: var(--bg);
   font-size: 28px; font-weight: 800; letter-spacing: -0.2px;
+  box-shadow: 0 0 0 2px var(--red), 0 0 28px rgb(255 75 75 / 0.3), 0 0 60px rgb(255 255 255 / 0.08);
 }
 .walk .controls { flex: none; display: grid; grid-template-columns: 1.35fr 1fr; gap: 10px; }
 .walk .ahead {
-  min-height: 60px; padding: 6px 10px; border-radius: 14px; background: var(--white); color: var(--bg);
+  min-height: 60px; padding: 6px 10px; border-radius: 18px; background: var(--white); color: var(--bg);
   font-size: 18px; font-weight: 800; line-height: 1.15; text-wrap: balance;
+  box-shadow: 0 0 0 2px var(--grey-dim), 0 0 22px rgb(255 255 255 / 0.12);
 }
 .walk .stop {
-  min-height: 60px; border-radius: 14px; background: transparent; color: var(--red);
+  min-height: 60px; border-radius: 18px; background: rgb(255 75 75 / 0.14); color: var(--red);
   border: 2px solid var(--red); font-size: 20px; font-weight: 800;
 }
 .walk .start:active, .walk .ahead:active { background: #dcdad4; }
-.walk .stop:active { background: rgb(224 54 44 / 0.12); }
+.walk .stop:active { background: rgb(255 75 75 / 0.26); }
 
 @media (prefers-reduced-motion: no-preference) {
   .walk .alert .text { animation: walk-in 0.18s ease-out; }
@@ -168,21 +180,21 @@
 .walk .voice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .walk .voice-grid button {
   display: grid; gap: 1px; min-height: 52px; padding: 8px 12px; text-align: left;
-  border-radius: 10px; background: var(--panel); color: var(--text); border: 1px solid var(--line);
+  border-radius: 14px; background: var(--panel); color: var(--text); border: 1px solid var(--line);
 }
 .walk .voice-grid button b { font-size: 16px; font-weight: 800; }
 .walk .voice-grid button small { font-size: 13px; font-weight: 600; color: var(--muted); }
-.walk .voice-grid button.on { color: var(--bg); background: var(--amber); border-color: var(--amber); }
+.walk .voice-grid button.on { color: var(--bg); background: var(--white); border-color: var(--white); }
 .walk .voice-grid button.on small { color: var(--bg); }
 .walk .voice-grid button:active { background: #dcdad4; }
-.walk .voice-grid button.on:active { background: var(--amber); }
+.walk .voice-grid button.on:active { background: var(--grey); }
 
 /* Setup: the voice commands you can use */
 .walk .phrases { display: grid; gap: 8px; padding-top: 14px; border-top: 1px solid var(--line); }
 .walk .phrases p { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--muted); }
 .walk .phrases ul { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 8px; }
 .walk .phrases li {
-  padding: 7px 11px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line);
+  padding: 7px 12px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line);
   font-size: 15px; font-weight: 600; color: var(--text);
 }
 
@@ -191,7 +203,7 @@
   position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
   display: inline-flex; align-items: center; gap: 10px;
   padding: 10px 16px 10px 14px; border-radius: 999px;
-  background: rgb(15 17 19 / 0.82); border: 1px solid rgb(255 255 255 / 0.18);
+  background: rgb(15 17 19 / 0.7); border: 1px solid rgb(255 255 255 / 0.18);
   color: var(--white); font-size: 16px; font-weight: 700;
   backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
 }
