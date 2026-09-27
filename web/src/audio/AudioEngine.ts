@@ -178,6 +178,27 @@ export class AudioEngine {
     this.workingTimer = null;
   }
 
+  /** Map chime: two soft, lower, falling notes, panned to the hazard's side. Different from the
+   *  camera's beep, so the walker can tell "reported on the map" from "seen right now". */
+  playMapChime(pan: number): Promise<void> {
+    this.ensureRunning();
+    const ctx = this.ctx!;
+    const out = new StereoPannerNode(ctx, { pan });
+    out.connect(ctx.destination);
+    const t = ctx.currentTime;
+    for (const [freq, at] of [[659, 0], [494, 0.16]] as const) {
+      const osc = new OscillatorNode(ctx, { frequency: freq, type: "sine" });
+      const gain = new GainNode(ctx, { gain: 0.0001 });
+      gain.gain.exponentialRampToValueAtTime(0.35, t + at + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + at + 0.22);
+      osc.connect(gain).connect(out);
+      osc.start(t + at);
+      osc.stop(t + at + 0.25);
+    }
+    this.soundStarted();
+    return new Promise((r) => setTimeout(() => { this.soundEnded(); r(); }, 420));
+  }
+
   /** Short beep placed in the left (-1), centre (0) or right (+1) ear. */
   playTone(pan: number, freq = 1000, ms = 120): Promise<void> {
     this.ensureRunning();

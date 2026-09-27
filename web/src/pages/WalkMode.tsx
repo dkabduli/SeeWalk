@@ -13,8 +13,8 @@ import { useWalkLoop } from "../camera/useWalkLoop";
 import { createVoiceCommand } from "../camera/voiceCommand";
 import { sendToLaptop } from "../debug/laptopLog";
 import { startHazardReporter, type HazardReporter } from "../map/hazardReporter";
-import { fetchBriefing, type NearHazard } from "../map/hazardsApi";
-import { startNearbyAlerts } from "../map/nearbyAlerts";
+import { fetchBriefing } from "../map/hazardsApi";
+import { createLocationAlerts, type LocationAlerts } from "../map/locationAlerts";
 import { strings } from "../i18n/strings";
 import "../styles/walk.css";
 
@@ -153,19 +153,49 @@ export default function WalkMode() {
 
   // Hazard map (Tiger Data): confident, GPS-tagged sidewalk hazards. Fire and forget.
   const reporter = useRef<HazardReporter | null>(null);
-  // Known hazards (open Ottawa 311 reports, other walkers' sightings): "Reported nearby: …", once each
-  const nearby = useRef<{ stop(): void } | null>(null);
-  const sayNearbyRef = useRef<(h: NearHazard) => boolean>(() => false);
+  // Location alerts (docs/prd/location-alerts.md): reported hazards (other walkers, pins, Ottawa 311)
+  // turned into sound as the walker approaches: "Pothole reported about 40 metres ahead", then
+  // "Pothole nearby, on your left. Be careful." The walker never sees the map, so this is the map.
+  const places = useRef<LocationAlerts | null>(null);
+  const placesTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const gpsNews = useRef<string[]>([]);          // "Location is weak" etc., waiting for a quiet moment
 
   /** Low priority, like the idle lines: only in automatic mode and when nothing else is being said. */
   const quietNow = () => autoAlertsRef.current && answering.current === 0 && !speaking.current && !audio.busy;
 
+  /** A map line: its own chime (reported, not seen), panned to the hazard's side, then the voice. */
+  const sayMapLine = useCallback(async (text: string, pan: number, direction?: Hazard["direction"]) => {
+    const id = ++speechId.current;
+    speaking.current = true;
+    log("say", `${text} (map)`);
+    try {
+      if (direction) showAlert({ text, direction, level: "info" });
+      else setShown({ text, level: "info" });
+      await audio.playMapChime(pan);
+      if (speechId.current !== id) return;
+      const mp3 = await tts(text, lang, voice);
+      if (speechId.current === id) await audio.playSpeech(mp3, pan);
+    } catch { /* live voice failed: the next reading tries again for anything still due */ } finally {
+      if (speechId.current === id) speaking.current = false;
+    }
+  }, [lang, voice, showAlert]);
+
+  /** Once a second: GPS news, then the one map alert that's due, only when nothing else is talking.
+   *  An alert isn't marked said until it's spoken, so a busy moment delays it, never loses it. */
+  const placesTickRef = useRef<() => void>(() => {});
   useLayoutEffect(() => {
-    sayNearbyRef.current = (h) => {
-      if (!quietNow()) return false;             // try again in 2 s
-      const phrase = lang === "fr" ? `Signalé à proximité : ${h.label_fr}` : `Reported nearby: ${h.label_en}`;
-      void speak({ type: "other", direction: "ahead", distance: "near", urgency: 3, confidence: 1, approaching: false, phrase });
-      return true;
+    placesTickRef.current = () => {
+      const la = places.current;
+      if (!la) return;
+      for (const e of la.gpsEvents()) gpsNews.current.push(e === "off" ? t.gpsOff : e === "weak" ? t.gpsWeak : t.gpsBack);
+      if (!quietNow()) return;
+      const news = gpsNews.current.shift();
+      if (news) { void sayMapLine(news, 0); return; }
+      const a = la.next(lang);
+      if (!a) return;
+      la.markSaid(a);
+      const dir = a.side === "left" || a.side === "right" ? a.side : a.side === "ahead" ? "ahead" : undefined;
+      void sayMapLine(a.text, a.pan, dir);
     };
   });
 
@@ -197,7 +227,11 @@ export default function WalkMode() {
   }, [lang]);
 
   // Every Gemini answer goes to the map, including question photos and voice-only mode
-  const onScene = useCallback((r: SceneResult) => reporter.current?.report(r), []);
+  const onScene = useCallback((r: SceneResult) => {
+    reporter.current?.report(r);
+    // The camera sees a pothole the map also knows: the walker hears it once, from the camera
+    places.current?.cameraSaw(r.hazards.filter((h) => h.confidence >= 0.6).map((h) => h.type));
+  }, []);
   const walk = useWalkLoop({ lang, onResult, onSystem, onScene });
   const { videoRef } = walk;
   const walkRef = useRef(walk);
@@ -329,8 +363,10 @@ export default function WalkMode() {
       walk.stop();
       reporter.current?.stop();
       reporter.current = null;
-      nearby.current?.stop();
-      nearby.current = null;
+      if (placesTimer.current) clearInterval(placesTimer.current);
+      placesTimer.current = null;
+      places.current = null;
+      gpsNews.current = [];
       getVoice().stop();
       speechId.current++;                        // cancel any alert still on its way
       audio.stop();
@@ -375,9 +411,18 @@ export default function WalkMode() {
 
   /** GPS for the hazard map: report what Gemini sees, and say known hazards the walker gets close to. */
   function startMapping() {
-    const r = startHazardReporter();
+    let la: LocationAlerts | null = null;
+    const r = startHazardReporter({
+      onFix: (p) => la?.onFix({
+        lat: p.coords.latitude, lon: p.coords.longitude, accuracy: p.coords.accuracy, at: p.timestamp,
+        heading: p.coords.heading, speed: p.coords.speed,
+      }),
+      onError: (code) => { la?.onError(code); log("info", `location error ${code}`); },
+    });
+    la = createLocationAlerts({ sessionId: r.sessionId });
     reporter.current = r;
-    nearby.current = startNearbyAlerts({ position: r.position, sessionId: r.sessionId, onNear: (h) => sayNearbyRef.current(h) });
+    places.current = la;
+    placesTimer.current = setInterval(() => placesTickRef.current(), 1000);
   }
 
   /** After the start clip: what the city and other walkers reported within 300 m (Gemini, from real data). */
@@ -455,6 +500,13 @@ export default function WalkMode() {
       walk.dropLook();                           // the last 30 seconds already have it; no second photo
       const text = memory.current.where(c.heard, lang);
       await answeringQuestion(async () => { await sayAnswer(text, "where"); });
+      return;
+    }
+    if (c.intent === "around") {
+      // "What's around me?": the map read aloud, from the walker's GPS position
+      walk.dropLook();
+      const text = places.current?.around(lang) ?? t.gpsOff;
+      await answeringQuestion(async () => { await sayAnswer(text, "around"); });
       return;
     }
     if (c.intent === "whats_ahead" || c.intent === "path") {

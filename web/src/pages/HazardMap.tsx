@@ -4,8 +4,9 @@ import "leaflet/dist/leaflet.css";
 import "../styles/hazard-map.css";
 import {
   fetchBriefing, fetchCityReports, fetchHazards, fetchHotspots, MAP_TYPES, saveReport,
-  type CityReport, type Hotspot, type KnownType, type MapHazard,
+  type CityReport, type Hotspot, type KnownType, type MapHazard, type MapType,
 } from "../map/hazardsApi";
+import { metresBetween } from "../map/geo";
 
 /** Hazard map (…/?map): sidewalk problems SeeWalk walkers passed, plus the City of Ottawa's open 311
  *  reports (not fixed yet), all from Tiger Data. */
@@ -51,6 +52,11 @@ export default function HazardMap() {
   const [status, setStatus] = useState<Status>("loading");
   const [reload, setReload] = useState(0);
   const [pinNote, setPinNote] = useState("");
+  const [pinType, setPinType] = useState<MapType>("pothole");
+  // Where this phone is (live), for "you are here" and pinning a hazard where you stand
+  const [here, setHere] = useState<{ lat: number; lon: number; accuracy: number } | null>(null);
+  const me = useRef<L.LayerGroup | null>(null);
+  const followed = useRef(false);
 
   const mapEl = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
@@ -69,6 +75,7 @@ export default function HazardMap() {
     }).addTo(m);
     cityPins.current = L.layerGroup().addTo(m); // under the walkers' pins
     pins.current = L.layerGroup().addTo(m);
+    me.current = L.layerGroup().addTo(m);       // "you are here" on top
     m.on("moveend", () => setView((n) => n + 1));
     map.current = m;
     return () => { m.remove(); map.current = null; };
@@ -86,14 +93,36 @@ export default function HazardMap() {
     return () => { ctrl.abort(); clearInterval(timer); };
   }, [days, reload]);
 
-  // Test the whole path from a phone: GPS → POST /hazards → Tiger Data → pin on this map.
-  // No location (laptop, permission denied): the pin goes in the middle of the map instead.
-  async function saveTestPin(lat: number, lon: number, where: string) {
+  // You are here: follow the phone's GPS while this page is open (fly to it the first time)
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    const id = navigator.geolocation.watchPosition(
+      (p) => setHere({ lat: p.coords.latitude, lon: p.coords.longitude, accuracy: p.coords.accuracy }),
+      () => setHere(null),
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 20_000 },
+    );
+    return () => navigator.geolocation.clearWatch(id);
+  }, []);
+  useEffect(() => {
+    const layer = me.current;
+    if (!layer || !map.current) return;
+    layer.clearLayers();
+    if (!here) return;
+    L.circle([here.lat, here.lon], { radius: here.accuracy, color: "#2f80ed", weight: 1, fillColor: "#2f80ed", fillOpacity: 0.12 }).addTo(layer);
+    L.circleMarker([here.lat, here.lon], { radius: 8, color: "#fff", weight: 3, fillColor: "#2f80ed", fillOpacity: 1 })
+      .bindPopup(`You are here (±${Math.round(here.accuracy)} m)`).addTo(layer);
+    if (!followed.current) { map.current.flyTo([here.lat, here.lon], 18); followed.current = true; }
+  }, [here]);
+
+  // Pin a real hazard where you're standing (e.g. beside a pothole, for the demo). Saved as "pinned":
+  // walkers hear it on approach ("Pothole reported about 40 metres ahead"). No location (laptop):
+  // the pin goes in the middle of the map instead.
+  async function savePin(lat: number, lon: number, where: string) {
     try {
       const r = await saveReport({
-        session_id: `test-${crypto.randomUUID()}`, lat, lon, type: "pothole", confidence: 1, source: "test",
+        session_id: `pin-${crypto.randomUUID()}`, lat, lon, type: pinType, confidence: 1, source: "pinned",
       });
-      setPinNote(r.saved ? `Test pin saved (${where}).` : `Not saved: ${r.reason}.`);
+      setPinNote(r.saved ? `${TYPE_INFO[pinType].label} pinned (${where}). Walkers will hear it.` : `Not saved: ${r.reason}.`);
       map.current?.flyTo([lat, lon], 18);
       setReload((n) => n + 1);
     } catch (e) {
@@ -101,16 +130,17 @@ export default function HazardMap() {
     }
   }
 
-  function dropTestPin() {
+  function pinHere() {
     const atCentre = (why: string) => {
       const c = map.current?.getCenter();
-      if (c) void saveTestPin(c.lat, c.lng, `${why}: middle of the map`);
+      if (c) void savePin(c.lat, c.lng, `${why}: middle of the map`);
       else setPinNote(why);
     };
+    if (here && here.accuracy <= 50) return void savePin(here.lat, here.lon, `±${Math.round(here.accuracy)} m`);
     if (!navigator.geolocation) return atCentre("No location");
     setPinNote("Finding you…");
     navigator.geolocation.getCurrentPosition(
-      (p) => void saveTestPin(p.coords.latitude, p.coords.longitude, `±${Math.round(p.coords.accuracy)} m`),
+      (p) => void savePin(p.coords.latitude, p.coords.longitude, `±${Math.round(p.coords.accuracy)} m`),
       (e) => atCentre(e.code === e.PERMISSION_DENIED ? "Location denied" : "No location"),
       { enableHighAccuracy: true, timeout: 15_000 },
     );
@@ -178,7 +208,10 @@ export default function HazardMap() {
       L.circleMarker([h.lat, h.lon], { radius: 9, color: "#fff", weight: 2, fillColor: color, fillOpacity: 0.9 })
         .bindPopup(
           `<b>${label}</b><br>${Math.round(h.confidence * 100)}% sure · ${ago(h.time)}` +
-          `<br><small>${h.source === "test" ? "test pin (dropped by hand)" : `seen by ${h.source === "fast_layer" ? "on-device detector" : "Gemini"}`}</small>`,
+          `<br><small>${
+            h.source === "pinned" ? "pinned by hand at the spot · walkers hear it"
+            : h.source === "test" ? "test pin · not announced to walkers"
+            : `seen by ${h.source === "fast_layer" ? "on-device detector" : "Gemini"} · walkers hear it`}</small>`,
         )
         .addTo(layer);
     }
@@ -194,6 +227,16 @@ export default function HazardMap() {
       if (!next.delete(t)) next.add(t);
       return next;
     });
+
+  // The nearest reported hazard to this phone (what a walker here would hear about first)
+  const nearest = useMemo(() => {
+    if (!here) return null;
+    const all = [
+      ...hazards.filter((h) => h.source !== "test").map((h) => ({ label: TYPE_INFO[h.type].label, lat: h.lat, lon: h.lon })),
+      ...city.filter((r) => r.walkway).map((r) => ({ label: r.label_en, lat: r.lat, lon: r.lon })),
+    ].map((h) => ({ ...h, d: metresBetween(here, h) })).sort((a, b) => a.d - b.d);
+    return all[0] ?? null;
+  }, [here, hazards, city]);
 
   const message =
     status === "loading" ? "Loading hazards…" :
@@ -236,8 +279,16 @@ export default function HazardMap() {
         </div>
         {message && <p className="hmap-msg" role="status">{message}</p>}
         {showCity && cityNote && <p className="hmap-note" role="status">{cityNote}</p>}
+        <p className="hmap-here" role="status">
+          {here
+            ? <>📍 You are here (±{Math.round(here.accuracy)} m){nearest ? <> · nearest reported: <b>{nearest.label.toLowerCase()}</b>, {Math.round(nearest.d)} m</> : null}</>
+            : "Finding your location…"}
+        </p>
         <div className="hmap-test">
-          <button onClick={dropTestPin}>📍 Drop a test pin here</button>
+          <select value={pinType} onChange={(e) => setPinType(e.target.value as MapType)} aria-label="Hazard to pin">
+            {MAP_TYPES.map((t) => <option key={t} value={t}>{TYPE_INFO[t].label}</option>)}
+          </select>
+          <button onClick={pinHere}>📍 Pin a hazard here</button>
           {pinNote && <span role="status">{pinNote}</span>}
         </div>
         <div className="hmap-test">

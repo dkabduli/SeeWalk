@@ -25,6 +25,9 @@ export const strings: Record<Lang, Record<string, string>> = {
     cmdRead: "read this.",
     introShort: "Say “VisionCompanion”, then your question",
     crossRefusal: "I can't tell when it's safe to cross. Listen for traffic.",
+    gpsOff: "Location is off. Reported hazards won't be announced.",
+    gpsWeak: "Location is weak. Reported hazards paused.",
+    gpsBack: "Location back.",
   },
   fr: {
     start: "Commencer", stop: "Arrêter", ahead: "Qu'y a-t-il devant\u00a0?", lang: "English", langShort: "EN",
@@ -50,5 +53,8 @@ export const strings: Record<Lang, Record<string, string>> = {
     cmdRead: "lis ceci.",
     introShort: "Dites «\u00a0VisionCompanion\u00a0», puis votre question",
     crossRefusal: "Je ne peux pas dire quand traverser. Écoutez la circulation.",
+    gpsOff: "Localisation désactivée. Les dangers signalés ne seront pas annoncés.",
+    gpsWeak: "Localisation faible. Dangers signalés en pause.",
+    gpsBack: "Localisation rétablie.",
   },
 };

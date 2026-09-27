@@ -33,7 +33,9 @@ class HazardReport(BaseModel):
     lon: float = Field(ge=-180, le=180)
     type: MapType
     confidence: float = Field(ge=0, le=1)
-    source: Literal["gemini", "fast_layer", "test"] = "gemini"  # test: pins dropped by hand from the map page
+    # test: automated smoke tests (never announced). pinned: a person pinned a real hazard on the map page
+    # (e.g. standing beside a pothole): announced to walkers like a sighting.
+    source: Literal["gemini", "fast_layer", "test", "pinned"] = "gemini"
 
 
 class SaveResult(BaseModel):
@@ -103,7 +105,7 @@ def get_city_reports(south: float = Query(ge=-90, le=90), west: float = Query(ge
 
 @router.get("/hazards/near")
 def get_near(lat: float = Query(ge=-90, le=90), lon: float = Query(ge=-180, le=180),
-             radius: float = Query(60, gt=0, le=100), session_id: str = Query("", max_length=64)):
+             radius: float = Query(60, gt=0, le=2000), session_id: str = Query("", max_length=64)):
     """Known hazards around the walker, nearest first: open city reports + other walkers' sightings."""
     _require_db()
     try:

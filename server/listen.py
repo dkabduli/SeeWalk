@@ -35,7 +35,7 @@ router = APIRouter()
 _client = genai.Client(api_key=config.GEMINI_API_KEY)
 LANGUAGE = {"en": "English", "fr": "French"}
 
-Intent = Literal["none", "whats_ahead", "holding", "path", "read", "cross", "where"]
+Intent = Literal["none", "whats_ahead", "holding", "path", "read", "cross", "where", "around"]
 
 PROMPT = """The audio is a short clip from the phone microphone of a blind pedestrian. {image_note}
 1. heard: transcribe what was said ("" if nothing intelligible).
@@ -47,6 +47,7 @@ PROMPT = """The audio is a short clip from the phone microphone of a blind pedes
    - read this / what does it say / read the sign                    → read
    - is it safe to cross / can I cross                               → cross
    - where was / where were / où était (the elevator, the stairs)   → where
+   - what's around me / near me / anything reported nearby / autour de moi → around
    Anything else (no wake word, background talk, or a voice announcing hazards like "Pothole ahead")
    is none.
 3. answer, in {language}, from the image only, for these intents:
@@ -56,7 +57,7 @@ PROMPT = """The audio is a short clip from the phone microphone of a blind pedes
      If no hand or held object is visible: "I can't see anything in your hand".
    - read: the visible text, word for word, at most 25 words. If none is readable: "I can't see any
      text to read".
-   - cross, where, none: "" (the app handles these).
+   - cross, where, around, none: "" (the app handles these).
 Never guess: describe only what is clearly visible."""
 
 
@@ -71,7 +72,7 @@ WAKE = re.compile(
 )
 KEYWORDS: dict[str, re.Pattern] = {
     "whats_ahead": re.compile(
-        r"ahead|front|devant|around|autour|(?:what(?:'s| is|s)|whats) (?:this|that)|c'est quoi|qu'est[- ]ce que c'est"
+        r"ahead|front|devant|(?:what(?:'s| is|s)|whats) (?:this|that)|c'est quoi|qu'est[- ]ce que c'est"
         r"|qu'est[- ]ce qu'il y a|qu'y a|y a-t-il",
         re.I,
     ),
@@ -80,6 +81,12 @@ KEYWORDS: dict[str, re.Pattern] = {
     "read": re.compile(r"\bread|\bsay|\bsays|\bsign|\blis|\blire|\blisez|\bécrit|panneau", re.I),
     "cross": re.compile(r"safe|can i cross|should i cross|ok to cross|traverser|sécuritaire|en sécurité", re.I),
     "where": re.compile(r"where was|where were|where'?s|où était|ou etait|où est|ou est", re.I),
+    # The map, read aloud: reported hazards around the walker's GPS position (location alerts)
+    "around": re.compile(
+        r"around (?:me|here|us)|near me|nearby|anything reported|reported|autour (?:de moi|d'ici)|près de moi"
+        r"|à proximité|a proximite|signal[ée]",
+        re.I,
+    ),
 }
 
 
@@ -99,6 +106,9 @@ def verified_intent(intent: str, heard: str) -> str:
     # "Where was the elevator?" is memory, even if the model heard it as what's ahead.
     if KEYWORDS["where"].search(heard):
         return "where"
+    # "What's around me?" is the map, even if the model heard it as what's ahead.
+    if KEYWORDS["around"].search(heard) and intent in ("around", "whats_ahead", "path"):
+        return "around"
     if intent == "none":
         return "none"
     pattern = KEYWORDS.get(intent)
