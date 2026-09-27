@@ -11,30 +11,17 @@ VisionCompanion runs on an iPhone worn on a chest strap. It watches the path wit
 
 Devpost deadline: **Sunday Sept 27, 2026, 10:00 AM EDT** (team target 9:30 AM). Judges read the commit history, so the work lives in this repo.
 
----
+<p align="center">
+  <img src="docs/img/phone-near-me.jpg" width="31%" alt="The start screen: 'Potholes near me' answered: 30 potholes reported within 1 kilometre, nearest about 200 metres in the road at 235 Nicholas Street">
+  &nbsp;&nbsp;
+  <img src="docs/img/phone-map.jpg" width="31%" alt="The hazard map on a phone: you are here at uOttawa, with City of Ottawa pothole reports along Nicholas Street and Colonel By Drive">
+</p>
+<p align="center"><sub>Real screenshots of the live app: <b>🗣️ Potholes near me</b> (spoken before you leave the house) and the hazard map a helper sees.</sub></p>
 
-## At a glance
-
-```mermaid
-%%{init: {"flowchart": {"htmlLabels": false, "padding": 18, "nodeSpacing": 24, "rankSpacing": 28}}}%%
-flowchart TB
-    A["Camera: a snapshot every 0.8 s"] -->|photo| B["Gemini: sees the hazards"]
-    B -->|hazards| C["VisionCompanion: picks what matters"]
-    C -->|what to say| D["ElevenLabs: River's voice"]
-    D -->|voice| E["Headphones: the walker hears it"]
-```
-
-### How the pieces talk (Gemini, ElevenLabs, Tiger Data)
-
-![How VisionCompanion works: the phone sends a snapshot every 0.8 s to the server, Gemini returns hazards, the phone plays a pre-recorded ElevenLabs clip; questions go through Gemini and ElevenLabs Flash live; confident sidewalk hazards go to the Tiger Data hazard map with GPS and time](docs/img/how-it-works.svg)
-
-Regenerate after changing the flow: `python3 docs/img/make_how_it_works.py`.
-
-### 3D model
-
-[![VisionCompanion signal path in 3D: Camera → Gemini → VisionCompanion → ElevenLabs → Headphones](docs/img/signal-path-3d.png)](https://raw.githack.com/dkabduli/VisionCompanion/main/docs/signal-path-3d.html)
-
-**[🦯 Open the 3D model →](https://raw.githack.com/dkabduli/VisionCompanion/main/docs/signal-path-3d.html)** Drag to turn, scroll to zoom. Source: [`docs/signal-path-3d.html`](docs/signal-path-3d.html).
+**Why it exists.** A cane is superb at the ground within a metre. It can't tell you the stop sign is 15 metres away,
+that the sidewalk ahead is heaved, that a branch hangs at head height, or that the city already knows about a
+broken audible crossing signal on your route. VisionCompanion adds exactly those, by ear, and stays quiet otherwise:
+no running commentary about every person and parked car. It never says a path is "clear" or "safe", in any language.
 
 ---
 
@@ -102,6 +89,11 @@ Full design: [docs/prd/location-alerts.md](docs/prd/location-alerts.md).
 | **City of Ottawa 311** (rings) | ~1,500 reports the city **hasn't fixed yet**: potholes, lifted, sunken or broken sidewalk, broken curbs, branches over the sidewalk, and crossings whose walk signal, **audible signal** or push button is broken | [Ottawa's open 311 file](https://open.ottawa.ca/) (Open Government Licence) → `server/city311.py` → the `city_reports` table. Refreshed daily by Vercel Cron (`CRON_SECRET`), or `scripts/import_311.py` |
 
 Around uOttawa that's about **100 reports within 1 km**, 58 of them potholes (most in the road).
+
+<p align="center">
+  <img src="docs/img/hazard-map.jpg" width="100%" alt="The hazard map around uOttawa and Sandy Hill: a blue dot for 'you are here' on campus, red rings for City of Ottawa pothole reports clustered along Nicholas Street and Colonel By Drive, orange rings for lifted or sunken sidewalk panels, blue for curbs; the panel reads 'nearest: lifted or sunken sidewalk panel, 163 m' with a Pin here button and filters">
+</p>
+<p align="center"><sub>The live hazard map around uOttawa (Tiger Data). Rings: open City of Ottawa 311 reports — <b>red</b> potholes (clustered on Nicholas St and Colonel By Dr), <b>orange</b> lifted or sunken sidewalk, <b>blue</b> curbs, <b>green</b> broken crossing signals. The blue dot is the phone. A walker never sees this: they hear it.</sub></p>
 
 ### What the walker hears
 
@@ -171,6 +163,19 @@ Around uOttawa that's about **100 reports within 1 km**, 58 of them potholes (mo
 
 **Voice questions** use our own mic capture (Safari's built-in speech recognition is blocked on some iPhones): the phone detects speech, clips it (16 kHz WAV) and sends it with the current camera frame to `POST /listen`. **One Gemini call** transcribes it, recognises the command and answers from the image. The server double-checks the wake word and a keyword in Gemini's own transcript before accepting a command, and up to two clips are checked at once so a question isn't lost behind background talk.
 
+### How the pieces talk (Gemini, ElevenLabs, Tiger Data)
+
+![How VisionCompanion works: the phone sends a snapshot every 0.8 s to the server, Gemini returns hazards, the phone plays a pre-recorded ElevenLabs clip; questions go through Gemini and ElevenLabs Flash live; confident sidewalk hazards go to the Tiger Data hazard map with GPS and time](docs/img/how-it-works.svg)
+
+Regenerate after changing the flow: `python3 docs/img/make_how_it_works.py`.
+
+### 3D model
+
+[![VisionCompanion signal path in 3D: Camera → Gemini → VisionCompanion → ElevenLabs → Headphones](docs/img/signal-path-3d.png)](https://raw.githack.com/dkabduli/VisionCompanion/main/docs/signal-path-3d.html)
+
+**[🦯 Open the 3D model →](https://raw.githack.com/dkabduli/VisionCompanion/main/docs/signal-path-3d.html)** Drag to turn, scroll to zoom. Source: [`docs/signal-path-3d.html`](docs/signal-path-3d.html).
+
+
 ### Measured latency (Sept 26, laptop + iPhone over a Cloudflare tunnel)
 
 | Step | Time |
@@ -196,6 +201,39 @@ Alternatives we measured and rejected:
 1. **Understanding the scene**, not just labelling objects: "steps up to a door", "curb", "branch at head height", "cones on the sidewalk, not the road": things a basic object detector can't name.
 2. **Audio + image in one call** for voice questions: transcribe, understand and answer from the photo at once.
 3. **Structured output**: answers in our JSON schema, in English or French, so the phone never parses free text.
+
+---
+
+## Decisions we tested (and what we measured)
+
+Every rule in the app came from a measurement, a tester's log, or a failure we caught. The short version:
+
+| Decision | Why (the evidence) |
+|---|---|
+| **Gemini 3.5 Flash-Lite**, minimal thinking, JSON schema | 3.8 Flash took 3.9–37.7 s per frame; Flash-Lite ~1.6–2 s with structured output we can filter |
+| **Two snapshots in flight**, one every 0.8 s | one at a time gave a fresh look only every ~2 s; overlapping halves the wait without a faster model |
+| **Street alerts are pre-recorded ElevenLabs clips** (4 voices × EN/FR, every direction) | live speech added ~0.4 s to every alert; clips play instantly. Answers to questions stay live |
+| **People, cars and chairs are not announced** | in the first tests they never stopped talking and drowned out the hazards that matter |
+| **Once per thing, whatever its direction**, then one close-up warning | a testers' walk logged "Curb ahead" 4× in 20 s and "Construction" 7× in 2 min as the angle changed |
+| **Wake word checked in code**, not only by the model | Gemini once heard the app's own "Crosswalk ahead" as "SeeWalk, cross…"; the transcript must contain the name *and* a keyword |
+| **Two voice clips checked at once** | 9 questions were dropped in testing while background talk was still being checked |
+| **The alert panel never changes height** | the camera box filled what was left, so every alert looked like the video zooming in and out |
+| **Main rear lens at 1080p** | iPhones' virtual cameras switched to the ultra-wide lens up close; the default stream was 640×480 |
+| **A dark frame still goes to Gemini** | 7 of 8 night photos were falsely "Camera blocked" by the brightness rule; Gemini read them all at ¼ brightness |
+| **French answers checked on the server** | ~1 in 30 answers came back in English; the server translates slips and blocks *dégagé*, *libre*, *clear*, *safe* |
+| **Map alerts: distance minus GPS error**, sides only once walking | warn early, never late; a wrong "on your left" is worse than none. Tested with simulated walks and on the live site toward a real city report |
+| **Road potholes only when asked** | beside a busy road they'd be announced every few steps; at a crossing they matter, so a question includes them |
+
+### By the numbers
+
+| | |
+|---|---|
+| Automated tests | **186** phone app + **91** server, including the alert rules replayed from real testers' logs |
+| Street photos in the Gemini evaluation | **29** (ours at night and in daylight, plus freely licensed Wikimedia Commons) |
+| Pre-recorded voice clips | **478** (River: 74 phrases × 2 languages; Alice, Charlie, Moyo: 55 × 2 each) |
+| Hazard reports in Tiger Data | ~**1,500** open City of Ottawa 311 reports, plus every confident sighting from walks |
+| From a hazard in view to hearing it | **≈ 2 s** (Gemini median 2.0 s on testers' phones; clips play instantly) |
+| Languages | English and French, everywhere: screen, clips, voice commands, answers |
 
 ---
 
