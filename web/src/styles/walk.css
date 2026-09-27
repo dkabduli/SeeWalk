@@ -112,16 +112,31 @@
 .walk .alert .arrow { font-size: 52px; font-weight: 800; line-height: 1; text-align: center; }
 .walk .alert.no-arrow { grid-template-columns: 1fr; padding-left: 18px; }
 .walk .alert { flex: none; }
+/* One fixed height while walking, whatever it says (one line, two, the recent line, a long answer):
+   the camera above fills the rest, so if this panel grew and shrank the video looked like it was
+   zooming in and out with every alert. */
+.walk.is-walking .alert { height: 128px; min-height: 0; overflow: hidden; }
 .walk .alert .text {
   min-width: 0; overflow-wrap: anywhere; text-wrap: balance; /* grid children must be allowed to shrink */
-  font-size: clamp(26px, 7.4vw, 36px); font-weight: 800; line-height: 1.12; letter-spacing: -0.3px;
+  font-size: clamp(24px, 6.8vw, 32px); font-weight: 800; line-height: 1.12; letter-spacing: -0.3px;
 }
+.walk .alert.long { min-height: 0; padding-top: 10px; padding-bottom: 10px; }
 .walk .alert.long:not(.no-arrow) { grid-template-columns: 40px 1fr; }
 .walk .alert.long .arrow { font-size: 30px; }
-.walk .alert.long .text {                           /* "read this" answers: smaller, scroll if needed */
-  font-size: 19px; font-weight: 700; line-height: 1.3; letter-spacing: 0;
-  max-height: 7.8em; overflow-y: auto;
+.walk .alert.long .text {        /* "read this" answers: 4 lines, then scroll inside the panel */
+  font-size: 17px; font-weight: 700; line-height: 1.3; letter-spacing: 0;
+  max-height: calc(4 * 1.3em); overflow-y: auto;
   -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+}
+.walk .alert.long .text.more {   /* more below: the last line fades out until you scroll to the end */
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 1.4em), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 1.4em), transparent);
+}
+/* The last two alerts, faded, under the current one */
+.walk .alert .recent {
+  grid-column: 1 / -1; margin-top: -4px;
+  font-size: 14px; font-weight: 600; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .walk .alert.none .text { font-size: 18px; font-weight: 600; color: var(--muted); text-wrap: pretty; }
 .walk .alert.urgent  { border-left-color: var(--red); }
@@ -174,29 +189,45 @@
 }
 @keyframes walk-in { from { opacity: 0.4; } to { opacity: 1; } }
 
-/* Setup: four voices. Tap one to hear "Door ahead" in it. */
+/* Setup: four voices. Tap one to choose it and hear "Stop sign on your right" in it. */
 .walk .voices { display: grid; gap: 8px; padding-top: 14px; border-top: 1px solid var(--line); }
 .walk .voices p { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--muted); }
 .walk .voice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.walk .voice-grid button {
+.walk .voice-card { position: relative; display: grid; }
+.walk .voice-card .pick {
   display: grid; gap: 1px; min-height: 52px; padding: 8px 12px; text-align: left;
   border-radius: 14px; background: var(--panel); color: var(--text); border: 1px solid var(--line);
 }
-.walk .voice-grid button b { font-size: 16px; font-weight: 800; }
-.walk .voice-grid button small { font-size: 13px; font-weight: 600; color: var(--muted); }
-.walk .voice-grid button.on { color: var(--bg); background: var(--white); border-color: var(--white); }
-.walk .voice-grid button.on small { color: var(--bg); }
-.walk .voice-grid button:active { background: #dcdad4; }
-.walk .voice-grid button.on:active { background: var(--grey); }
+.walk .voice-card .pick b { font-size: 16px; font-weight: 800; }
+.walk .voice-card .pick small { font-size: 13px; font-weight: 600; color: var(--muted); }
+.walk .voice-card.on .pick { color: var(--bg); background: var(--white); border-color: var(--white); }
+.walk .voice-card.on .pick small { color: var(--bg); }
+.walk .voice-card .pick:active { background: #dcdad4; }
+.walk .voice-card.on .pick:active { background: var(--grey); }
 
 /* Setup: the voice commands you can use */
 .walk .phrases { display: grid; gap: 8px; padding-top: 14px; border-top: 1px solid var(--line); }
 .walk .phrases p { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--muted); }
+.walk .phrases .say-then { font-size: 15px; font-weight: 700; letter-spacing: 0; text-transform: none; color: var(--text); }
 .walk .phrases ul { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 8px; }
 .walk .phrases li {
   padding: 7px 12px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line);
   font-size: 15px; font-weight: 600; color: var(--text);
 }
+
+/* Edge glow: the side of the camera the alert came from lights up in its colour, then fades.
+   Left / right edge for left / right, the top edge for ahead. */
+/* Information (signs, crosswalks) glows soft white: the panel's steel grey vanishes against a street */
+.walk .viewfinder .glow { position: absolute; inset: 0; pointer-events: none; --c: 245 245 247; }
+.walk .viewfinder .glow.urgent  { --c: 255 75 75; }
+.walk .viewfinder .glow.warning { --c: 255 181 71; }
+.walk .viewfinder .glow.left  { background: linear-gradient(to right,  rgb(var(--c) / 0.6), rgb(var(--c) / 0.2) 6%, rgb(var(--c) / 0) 30%); }
+.walk .viewfinder .glow.right { background: linear-gradient(to left,   rgb(var(--c) / 0.6), rgb(var(--c) / 0.2) 6%, rgb(var(--c) / 0) 30%); }
+.walk .viewfinder .glow.ahead { background: linear-gradient(to bottom, rgb(var(--c) / 0.6), rgb(var(--c) / 0.2) 5%, rgb(var(--c) / 0) 24%); }
+@media (prefers-reduced-motion: no-preference) {
+  .walk .viewfinder .glow { animation: walk-glow 1.6s ease-out forwards; }
+}
+@keyframes walk-glow { 0% { opacity: 0; } 10% { opacity: 1; } 100% { opacity: 0; } }
 
 /* Siri-style "working" indicator over the bottom of the camera */
 .walk .working {

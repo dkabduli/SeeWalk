@@ -154,7 +154,7 @@ interface Session { active: boolean; stop: () => void }
 /** onCommand: called with the recognised command (intent !== "none").
  *  onDebug (optional): reports what was heard, errors and state, for testing on the phone.
  *  getFrame (optional): the current camera frame (base64 JPEG), sent with each clip.
- *  onChecking (optional): true while a clip is being checked by the server, false after.
+ *  onChecking (optional): true each time a clip goes to the server, false once none is being checked.
  *  onNoCommand (optional): the clip was speech, but not a command.
  *  onWake (optional): speech has lasted long enough to be the name; the rest of the question follows. */
 export function createVoiceCommand(
@@ -244,10 +244,14 @@ export function createVoiceCommand(
     if (!s.active) { cleanup(); return; } // stopped while the permission prompt was open
     s.stop = () => { s.active = false; cleanup(); };
 
-    let checking = false; // one clip at a time
+    // Up to two clips are checked at once. In the testers' walk, 9 clips were thrown away because
+    // an earlier one (often background talk) was still being checked, and one was a real question.
+    // The one-answer rule below (3 s) still stops two clips from both answering.
+    const MAX_CHECKING = 2;
+    let checking = 0;
     const clipper = new SpeechClipper(ctx.sampleRate, (clip) => {
-      if (checking) { onDebug?.("speech ignored (still checking the last one)"); return; }
-      checking = true;
+      if (checking >= MAX_CHECKING) { onDebug?.("speech ignored (two already being checked)"); return; }
+      checking += 1;
       onChecking?.(true);
       const seconds = (clip.length / ctx.sampleRate).toFixed(1);
       onDebug?.(`speech ${seconds} s → checking`);
@@ -258,12 +262,15 @@ export function createVoiceCommand(
           if (r.intent !== "none" && Date.now() - lastFired > 3000) { // one question → one answer
             lastFired = Date.now();
             onCommand(r);
-          } else if (r.intent === "none") {
-            onNoCommand?.();
+          } else if (r.intent === "none" && checking === 1) {
+            onNoCommand?.(); // only the last clip back decides; another may still be the question
           }
         })
         .catch((e: Error) => onDebug?.(`error: ${e.message}`))
-        .finally(() => { checking = false; onChecking?.(false); });
+        .finally(() => {
+          checking -= 1;
+          if (checking === 0) onChecking?.(false); // "checking" ends when the last clip is done
+        });
     }, onWake);
 
     clipperRef = clipper;

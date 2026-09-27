@@ -193,18 +193,63 @@ describe("createVoiceCommand", () => {
     expect(onCommand).not.toHaveBeenCalled();
   });
 
-  it("checks one clip at a time", async () => {
+  it("a question asked while background talk is being checked still gets through (testers' walk)", async () => {
+    const onCommand = vi.fn();
+    const checking: boolean[] = [];
+    createVoiceCommand(onCommand, undefined, undefined, (c) => checking.push(c)).start("en");
+    await flush();
+    await say();                       // background talk
+    await say();                       // the real question, while the talk is still being checked
+    expect(listenCalls).toHaveLength(2);
+    listenCalls[1].resolve({ heard: "SeeWalk, what's ahead?", intent: "whats_ahead", answer: "", command: true });
+    await flush();
+    expect(onCommand).toHaveBeenCalledTimes(1);
+    expect(checking).toEqual([true, true]); // still checking the first
+    listenCalls[0].resolve({ heard: "so anyway", intent: "none", answer: "", command: false });
+    await flush();
+    expect(checking).toEqual([true, true, false]); // done once both are back
+  });
+
+  it("background talk coming back first doesn't count as 'no question' while the question is checked", async () => {
+    const onNoCommand = vi.fn();
+    createVoiceCommand(vi.fn(), undefined, undefined, undefined, onNoCommand).start("en");
+    await flush();
+    await say();
+    await say();
+    listenCalls[0].resolve({ heard: "so anyway", intent: "none", answer: "", command: false });
+    await flush();
+    expect(onNoCommand).not.toHaveBeenCalled();   // the second might be the question
+    listenCalls[1].resolve({ heard: "yeah", intent: "none", answer: "", command: false });
+    await flush();
+    expect(onNoCommand).toHaveBeenCalledTimes(1); // both were talk
+  });
+
+  it("at most two clips at once; a third is dropped until one comes back", async () => {
     const debug: string[] = [];
     createVoiceCommand(vi.fn(), (m) => debug.push(m)).start("en");
     await flush();
     await say();
-    await say();                       // second sentence while the first is still being checked
-    expect(listenCalls).toHaveLength(1);
+    await say();
+    await say();
+    expect(listenCalls).toHaveLength(2);
     expect(debug.some((m) => m.includes("ignored"))).toBe(true);
     listenCalls[0].resolve({ heard: "", intent: "none", answer: "", command: false });
     await flush();
     await say();
-    expect(listenCalls).toHaveLength(2);
+    expect(listenCalls).toHaveLength(3);
+  });
+
+  it("two clips that both hear a command give one answer", async () => {
+    const onCommand = vi.fn();
+    createVoiceCommand(onCommand).start("en");
+    await flush();
+    await say();
+    await say();
+    const cmd = { heard: "SeeWalk, what's ahead?", intent: "whats_ahead" as const, answer: "", command: true };
+    listenCalls[0].resolve(cmd);
+    listenCalls[1].resolve(cmd);
+    await flush();
+    expect(onCommand).toHaveBeenCalledTimes(1);
   });
 
   it("one question → one answer (3 s debounce)", async () => {

@@ -73,6 +73,38 @@ export default function WalkMode() {
   const sayIdleRef = useRef<(text: string) => void>(() => {});
   const langRef = useRef(lang);
 
+  // Street alerts light the camera's edge on the side the sound came from, and the last two stay
+  // on the panel, faded, for a companion walking alongside (and for the video).
+  const [recent, setRecent] = useState<string[]>([]);
+  const [glow, setGlow] = useState<{ side: Hazard["direction"]; level: Shown["level"]; id: number } | null>(null);
+  const lastAlert = useRef<string | null>(null);
+  // Long answers ("read this") show 4 lines and scroll; a fade at the bottom says there's more
+  const textRef = useRef<HTMLSpanElement | null>(null);
+  const [more, setMore] = useState(false);
+  const checkMore = () => {
+    const el = textRef.current;
+    setMore(!!el && el.scrollHeight - el.scrollTop - el.clientHeight > 2);
+  };
+  const showAlert = useCallback((next: Shown & { direction: Hazard["direction"] }) => {
+    const prev = lastAlert.current;
+    if (prev && prev !== next.text) {
+      setRecent((r) => [prev, ...r.filter((x) => x !== prev && x !== next.text)].slice(0, 2));
+    }
+    lastAlert.current = next.text;
+    setShown(next);
+    setGlow((g) => ({ side: next.direction, level: next.level, id: (g?.id ?? 0) + 1 }));
+  }, []);
+  useLayoutEffect(() => {
+    const el = textRef.current;
+    if (el) el.scrollTop = 0;                    // each new answer starts at the top
+    checkMore();
+  }, [shown]);
+  useEffect(() => {
+    if (!glow) return;
+    const t = setTimeout(() => setGlow(null), 1700);
+    return () => clearTimeout(t);
+  }, [glow]);
+
   const speak = useCallback(async (h: Hazard, asked = false) => {
     const interrupt = h.urgency === 1 || asked;
     if (!interrupt && (speaking.current || audio.busy)) return; // don't talk over ourselves
@@ -90,12 +122,12 @@ export default function WalkMode() {
       // for the live voice. Answers to questions use Gemini's own words.
       const instant = !asked ? streetClip(h) : null;
       if (instant && audio.hasClip(lang, instant)) {
-        setShown({ text: (clips as ClipTable)[instant][lang], direction: h.direction, level: levelOf(h) });
+        showAlert({ text: (clips as ClipTable)[instant][lang], direction: h.direction, level: levelOf(h) });
         await audio.playTone(pan, h.urgency === 1 ? 1200 : 1000);
         if (current()) await audio.playClip(lang, instant, pan);
         return;
       }
-      setShown({ text: h.phrase, direction: h.direction, level: levelOf(h) });
+      showAlert({ text: h.phrase, direction: h.direction, level: levelOf(h) });
       await audio.playTone(pan, h.urgency === 1 ? 1200 : 1000);
       if (!current()) return;
       const key = fallbackClip(h);
@@ -114,7 +146,7 @@ export default function WalkMode() {
     } finally {
       if (current()) speaking.current = false;
     }
-  }, [lang, voice]);
+  }, [lang, voice, showAlert]);
 
   const onResult = useCallback((r: SceneResult) => {
     memory.current.remember(r);
@@ -276,6 +308,9 @@ export default function WalkMode() {
       speechId.current++;                        // cancel any alert still on its way
       audio.stop();
       setShown(null);
+      setRecent([]);
+      setGlow(null);
+      lastAlert.current = null;
       audio.stopWorking();
       setHearing(false);
       setBusy("idle");
@@ -341,23 +376,20 @@ export default function WalkMode() {
     });
   }
 
-  async function pickVoice(id: VoiceId) {
+  // Voice cards: the sample starts first thing in the tap (iOS allows media only inside it)
+  const SAMPLE = "st_stop_sign_right"; // "Stop sign on your right", in every voice and language
+  function playSample(id: VoiceId) {
+    audio.previewClip(id, lang, SAMPLE)
+      .then(() => log("info", `voice sample ${id} played`))
+      .catch((e: Error) => log("info", `voice sample ${id} failed: ${e.name}: ${e.message}`));
+  }
+
+  /** Tap a card: choose this voice for the walk, and hear it. */
+  function pickVoice(id: VoiceId) {
+    playSample(id);
     setVoice(id);
     saveVoice(id);
     audio.setVoice(id);
-    await audio.unlock();
-    // One street line, so the walker hears this voice before the walk. The clip if we have it
-    // (the same recording the alerts use); otherwise a live reading in this voice.
-    const sample = "st_door_ahead";
-    await audio.preload(lang, (k) => k === sample);
-    if (audio.hasClip(lang, sample)) {
-      await audio.playClip(lang, sample);
-      return;
-    }
-    try {
-      const mp3 = await tts(lang === "fr" ? "Porte devant" : "Door ahead", lang, id, 6000);
-      await audio.playSpeech(mp3, 0);
-    } catch { /* the walk still uses this voice */ }
   }
 
   async function whatsAhead() {
@@ -433,6 +465,7 @@ export default function WalkMode() {
 
       <div className="viewfinder">
         <video ref={videoRef} playsInline muted autoPlay aria-hidden="true" />
+        {walking && glow && <div key={glow.id} className={`glow ${glow.side} ${glow.level}`} aria-hidden="true" />}
         {walking && busy !== "idle" && (() => {
           const label = busy === "speaking" ? voiceName : busy === "thinking" ? t.thinking : t.listeningNow;
           // Speaking: the voice itself is the news, so VoiceOver shouldn't say "River" over it
@@ -455,7 +488,7 @@ export default function WalkMode() {
             <li>{t.step3}</li>
           </ol>
           <div className="phrases">
-            <p>{t.youCanSay}</p>
+            <p className="say-then">{t.sayThen}</p>
             <ul>
               <li>{t.cmdAhead}</li>
               <li>{t.cmdHolding}</li>
@@ -467,15 +500,12 @@ export default function WalkMode() {
             <p>{t.voice}</p>
             <div className="voice-grid">
               {VOICES.map((v) => (
-                <button
-                  key={v.id}
-                  className={voice === v.id ? "on" : ""}
-                  aria-pressed={voice === v.id}
-                  onClick={() => pickVoice(v.id)}
-                >
-                  <b>{v.name}</b>
-                  <small>{v.place[lang]}</small>
-                </button>
+                <div key={v.id} className={`voice-card${voice === v.id ? " on" : ""}`}>
+                  <button className="pick" aria-pressed={voice === v.id} onClick={() => pickVoice(v.id)}>
+                    <b>{v.name}</b>
+                    <small>{v.place[lang]}</small>
+                  </button>
+                </div>
               ))}
             </div>
           </div>
@@ -494,7 +524,10 @@ export default function WalkMode() {
           aria-live="polite"
         >
           {shown?.direction && <span className="arrow" aria-hidden="true">{ARROW[shown.direction]}</span>}
-          <span className="text">{shown?.text ?? t.introShort}</span>
+          <span className={`text${more ? " more" : ""}`} ref={textRef} onScroll={checkMore}>{shown?.text ?? t.introShort}</span>
+          {recent.length > 0 && (shown?.text.length ?? 0) <= 40 && (
+            <span className="recent" aria-hidden="true">{recent.join(" · ")}</span>
+          )}
         </section>
       )}
 

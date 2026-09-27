@@ -82,6 +82,24 @@ export class AudioEngine {
     );
   }
 
+  // Voice samples on the setup screen play through a plain <audio> element, not Web Audio: on an
+  // iPhone with the ring/silent switch on, Web Audio is muted until the mic is running (during a
+  // walk it isn't, which is why the walk was audible but the samples were silent).
+  private sample: HTMLAudioElement | null = null;
+
+  /** Play one bundled clip in any voice (the voice cards). Call straight from the tap, with no
+   *  await before it: iOS only lets media start inside the gesture. Resolves when it ends. */
+  previewClip(voice: VoiceId, lang: Lang, key: string): Promise<void> {
+    this.sample?.pause();
+    this.stop();
+    const el = new Audio(clipUrl(voice, lang, key));
+    el.setAttribute("playsinline", "");
+    this.sample = el;
+    return el.play().then(
+      () => new Promise<void>((resolve) => { el.onended = () => resolve(); el.onpause = () => resolve(); }),
+    );
+  }
+
   /** iOS suspends ("interrupts") the audio context after a call, Siri, or switching apps.
    *  Try to resume before every sound; if it stays suspended, the next tap resumes it. */
   private ensureRunning() {

@@ -32,21 +32,22 @@ describe("pickAlert", () => {
     expect(pick?.type).toBe("bike");
   });
 
+  // Generic windows (things that aren't street hazards, e.g. an obstacle the walker asked about)
   it("urgent hazards may repeat after 5 s", () => {
-    expect(mod.pickAlert(scene(hz({ type: "pothole", urgency: 1 })))).not.toBeNull();
+    expect(mod.pickAlert(scene(hz({ type: "obstacle_in_path", urgency: 1 })))).not.toBeNull();
     vi.setSystemTime(4000);
-    expect(mod.pickAlert(scene(hz({ type: "pothole", urgency: 1 })))).toBeNull();
+    expect(mod.pickAlert(scene(hz({ type: "obstacle_in_path", urgency: 1 })))).toBeNull();
     vi.setSystemTime(5100);
-    expect(mod.pickAlert(scene(hz({ type: "pothole", urgency: 1 })))).not.toBeNull();
+    expect(mod.pickAlert(scene(hz({ type: "obstacle_in_path", urgency: 1 })))).not.toBeNull();
   });
 
   it("warnings wait 8 s, information (crosswalk, stop sign) 45 s", () => {
-    mod.pickAlert(scene(hz({ type: "pothole", urgency: 2 })));
+    mod.pickAlert(scene(hz({ type: "obstacle_in_path", urgency: 2 })));
     mod.pickAlert(scene(hz({ urgency: 3 })));
     vi.setSystemTime(7000);
-    expect(mod.pickAlert(scene(hz({ type: "pothole", urgency: 2 })))).toBeNull();
+    expect(mod.pickAlert(scene(hz({ type: "obstacle_in_path", urgency: 2 })))).toBeNull();
     vi.setSystemTime(8100);
-    expect(mod.pickAlert(scene(hz({ type: "pothole", urgency: 2 })))).not.toBeNull();
+    expect(mod.pickAlert(scene(hz({ type: "obstacle_in_path", urgency: 2 })))).not.toBeNull();
     vi.setSystemTime(44000);
     expect(mod.pickAlert(scene(hz({ urgency: 3 })))).toBeNull();
     vi.setSystemTime(45100);
@@ -84,6 +85,37 @@ describe("pickAlert", () => {
 });
 
 describe("when to say it", () => {
+  // Replays of the testers' walk (lab log, Sept 26, 18:19-18:21)
+  const at = (sec: number) => vi.setSystemTime(sec * 1000);
+  const say = (h: Partial<Hazard>) => mod.pickAlert(scene(hz(h))) !== null;
+
+  it("one curb at a corner: said once, then once more only when it's close (was 4 times in 20 s)", () => {
+    const curb = { type: "curb_or_dropoff" as const, urgency: 2 as const };
+    at(0);  expect(say({ ...curb, distance: "near", direction: "ahead" })).toBe(true);
+    at(3);  expect(say({ ...curb, distance: "near", direction: "right" })).toBe(false); // same curb, new angle
+    at(10); expect(say({ ...curb, distance: "close", direction: "ahead", urgency: 1 })).toBe(true); // last warning
+    at(19); expect(say({ ...curb, distance: "near", direction: "ahead" })).toBe(false);
+    at(20); expect(say({ ...curb, distance: "close", direction: "left", urgency: 1 })).toBe(false);
+  });
+
+  it("one work zone passed on the left, ahead and right: said once (was 7 times in under 2 minutes)", () => {
+    const cones = { type: "construction" as const, urgency: 2 as const };
+    const log: [number, Partial<Hazard>][] = [
+      [0, { direction: "ahead", distance: "near" }], [2, { direction: "ahead", distance: "close", urgency: 1 }],
+      [8, { direction: "right", distance: "near" }], [14, { direction: "right", distance: "near" }],
+      [21, { direction: "ahead", distance: "near" }], [26, { direction: "right", distance: "near" }],
+    ];
+    const said = log.filter(([t, h]) => { at(t); return say({ ...cones, ...h }); }).map(([t]) => t);
+    expect(said).toEqual([0, 2]); // first sight, then the close-up
+  });
+
+  it("the same curb 30 s later is said again (a new corner, or still standing there)", () => {
+    const curb = { type: "curb_or_dropoff" as const, urgency: 2 as const, distance: "near" as const };
+    at(0);  expect(say(curb)).toBe(true);
+    at(29); expect(say(curb)).toBe(false);
+    at(31); expect(say(curb)).toBe(true);
+  });
+
   const pothole = (distance: Hazard["distance"]) => scene(hz({ type: "pothole", urgency: distance === "close" ? 1 : 2, distance }));
 
   it("things you can trip on: at first sighting, then once more when close", () => {
@@ -106,9 +138,9 @@ describe("when to say it", () => {
     mod.pickAlert(pothole("near"));
     vi.setSystemTime(1000);
     mod.pickAlert(pothole("close"));
-    vi.setSystemTime(20_000);                                // another one, further down the street
+    vi.setSystemTime(31_000);                                // another one, further down the street
     expect(mod.pickAlert(pothole("near"))).not.toBeNull();
-    vi.setSystemTime(22_000);
+    vi.setSystemTime(33_000);
     expect(mod.pickAlert(pothole("close"))).not.toBeNull();
   });
 

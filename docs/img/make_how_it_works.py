@@ -1,4 +1,4 @@
-"""Draws docs/img/how-it-works.svg: who talks to whom in SeeWalk, with timings.
+"""Draws docs/img/how-it-works.svg: who talks to whom in VisionCompanion, with timings.
 
     python3 docs/img/make_how_it_works.py
 
@@ -15,10 +15,10 @@ RED, AMBER, STEEL, PLANNED = "#e0362c", "#f3b21b", "#7d8ea3", "#5b626b"
 LANES = {
     "walker": (110, "Walker", "open-ear headphones", TEXT, False),
     "phone": (340, "iPhone (Safari)", "chest camera + mic", TEXT, False),
-    "server": (570, "SeeWalk server", "FastAPI on the laptop", TEXT, False),
+    "server": (570, "Our server", "FastAPI on the laptop", TEXT, False),
     "gemini": (800, "Gemini", "3.5 Flash-Lite", "#8ab4f8", False),
-    "eleven": (1030, "ElevenLabs", "River voice", AMBER, False),
-    "tiger": (1250, "Tiger Data", "not set up yet", PLANNED, True),
+    "eleven": (1030, "ElevenLabs", "River + 3 more voices", AMBER, False),
+    "tiger": (1250, "Tiger Data", "built, not connected", PLANNED, True),
 }
 
 # Rows: ("section", number, title, planned?) | ("msg", from, to, label, style) | ("note", lane, text, width)
@@ -27,11 +27,11 @@ ROWS = [
     ("section", "1", "Street alerts, automatic: a new snapshot every 0.8 s, up to 2 at Gemini at once", False),
     ("msg", "phone", "server", "POST /analyze · 768 px JPEG", "req"),
     ("msg", "server", "gemini", "image + prompt + JSON schema", "req"),
-    ("msg", "gemini", "server", "hazards: type, left/ahead/right, distance · ~1.6 s", "res"),
+    ("msg", "gemini", "server", "hazards: type, left/ahead/right, distance · ~1.6–2 s", "res"),
     ("msg", "server", "phone", "SceneResult JSON", "res"),
     ("note", "phone", "Picks one: street hazards only · confidence ≥ 0.6 · first sighting, again under 2 m", 500),
     ("msg", "phone", "walker", "tone in L/R ear + “Stop sign on your right”", "out"),
-    ("section", "2", "Ask a question: “SeeWalk, read this.” (also: what's ahead, what am I holding, what's blocking my path)", False),
+    ("section", "2", "Ask a question: “VisionCompanion, read this.” (also: what's ahead, what am I holding, what's blocking my path)", False),
     ("msg", "walker", "phone", "speech", "req"),
     ("msg", "phone", "server", "POST /listen · 16 kHz WAV + camera frame", "req"),
     ("msg", "server", "gemini", "audio + image in one call", "req"),
@@ -41,8 +41,8 @@ ROWS = [
     ("msg", "eleven", "phone", "mp3 · ~0.3 s", "res"),
     ("msg", "phone", "walker", "the answer, in River's voice", "out"),
     ("section", "3", "Once, ahead of time", False),
-    ("msg", "eleven", "phone", "Multilingual v2 → 148 River clips (EN + FR) bundled in the app: alerts play instantly", "res"),
-    ("section", "4", "Planned, not built: hazard map", True),
+    ("msg", "eleven", "phone", "Multilingual v2 → 148 River clips + 110 each for Alice, Charlie, Moyo (EN + FR), bundled: alerts play instantly", "res"),
+    ("section", "4", "Hazard map: code built, waiting for a database connection", True),
     ("msg", "server", "tiger", "hazard + GPS + time → hypertable", "plan"),
     ("msg", "tiger", "phone", "map of reported potholes and curbs", "plan"),
 ]
@@ -105,10 +105,10 @@ for key, (x, name, detail, colour, planned) in LANES.items():
     text(x, HEAD_Y + 50, detail, 13, MUTED)
 
 # title + legend
-text(24, 44, "How SeeWalk works", 28, TEXT, "start", 700)
+text(24, 44, "How VisionCompanion works", 28, TEXT, "start", 700)
 text(24, 72, "The phone sees, Gemini understands, ElevenLabs speaks. Gemini and ElevenLabs times measured from our laptop, Sept 2026.", 14.5, MUTED, "start")
 ly = H - 26
-legend = [(TEXT, "", "request"), (STEEL, ' stroke-dasharray="6 5"', "response"), (AMBER, "", "what the walker hears"), (PLANNED, ' stroke-dasharray="6 5"', "planned, not built")]
+legend = [(TEXT, "", "request"), (STEEL, ' stroke-dasharray="6 5"', "response"), (AMBER, "", "what the walker hears"), (PLANNED, ' stroke-dasharray="6 5"', "not connected yet")]
 lx = 24
 for colour, dash, name in legend:
     w = 3 if colour == AMBER else 1.8
@@ -120,7 +120,7 @@ text(W - 24, ly, "Hazard in view → heard: ~2 s (estimate)", 13, MUTED, "end")
 svg = (
     f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}" '
     'font-family="-apple-system, BlinkMacSystemFont, \'Segoe UI\', Helvetica, Arial, sans-serif">'
-    f'<title>How SeeWalk works: phone, server, Gemini, ElevenLabs, Tiger Data</title>'
+    f'<title>How VisionCompanion works: phone, server, Gemini, ElevenLabs, Tiger Data</title>'
     f'<rect width="{W}" height="{H}" rx="16" fill="{BG}"/>' + "".join(out) + "</svg>\n"
 )
 Path(__file__).with_name("how-it-works.svg").write_text(svg)

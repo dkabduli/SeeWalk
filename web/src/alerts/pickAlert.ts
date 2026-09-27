@@ -24,8 +24,15 @@ const PILLAR_MIN = 0.8;
 const PILLAR_GAP_MS = 4000;
 const STAIRS: ReadonlySet<Hazard["type"]> = new Set<Hazard["type"]>(["stairs_down", "steps_up"]);
 const SLOW: ReadonlySet<Hazard["type"]> = new Set<Hazard["type"]>([...PASSAGES, ...STAIRS, "pillar"]);
-// Direction change is the same object: a sign, the same stairs, one doorway, one row of columns.
-const BY_TYPE: ReadonlySet<Hazard["type"]> = new Set<Hazard["type"]>([...INFO, ...PASSAGES, ...STAIRS, "pillar"]);
+// Things on the ground and work zones. In the testers' walk, "Curb ahead" played 4 times in 20 s
+// and "Construction" 7 times in under 2 minutes as it moved between left, ahead and right. Now each
+// is one thing whatever its direction, said again after 30 s, plus the one close-up warning.
+const GROUND: ReadonlySet<Hazard["type"]> = new Set<Hazard["type"]>([
+  "pothole", "uneven_surface", "curb_or_dropoff", "construction", "head_height_obstacle",
+]);
+const GROUND_REPEAT_MS = 30_000;
+// Direction change is the same object: a sign, the same stairs, one doorway, one row of columns, one curb.
+const BY_TYPE: ReadonlySet<Hazard["type"]> = new Set<Hazard["type"]>([...INFO, ...PASSAGES, ...STAIRS, ...GROUND, "pillar"]);
 const NOT_SCENE: ReadonlySet<Hazard["type"]> = new Set<Hazard["type"]>(["person", "bike", "car"]);
 const FILLER = new Set(["ahead", "left", "right", "your", "on", "devant", "gauche", "droite"]);
 const lastSpoken = new Map<string, { at: number; closeSaid: boolean }>();
@@ -33,7 +40,8 @@ let lastClosedDoorAt = -1;
 let pillarLooks = 0;
 let pillarLookAt = -1;
 const repeatKey = (h: Hazard) => (BY_TYPE.has(h.type) ? h.type : `${h.type}:${h.direction}`);
-const repeatAfter = (h: Hazard) => (SLOW.has(h.type) ? SLOW_REPEAT_MS : REPEAT_MS[h.urgency]);
+const repeatAfter = (h: Hazard) =>
+  GROUND.has(h.type) ? GROUND_REPEAT_MS : SLOW.has(h.type) ? SLOW_REPEAT_MS : REPEAT_MS[h.urgency];
 
 /** Street alerts: what's announced without being asked. A wide pillar in the corridor is included.
  *  A chair or a thin pole is not: those are spoken only when the walker asks.
