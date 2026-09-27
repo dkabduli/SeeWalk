@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- The home-screen cane (web/scripts/make_icons.py) without the ripples, for the browser tab -->
+  <rect width="100" height="100" rx="22" fill="#0f1113"/>
+  <g stroke-width="7.4">
+    <line x1="72" y1="22.5" x2="67.155" y2="31.085" stroke="#7d8ea3"/>
+    <line x1="67.155" y1="31.085" x2="49.77" y2="61.89" stroke="#f4f2ed"/>
+    <line x1="49.77" y1="61.89" x2="43.5" y2="73" stroke="#e0362c"/>
+  </g>
+  <circle cx="72" cy="22.5" r="3.7" fill="#7d8ea3"/>
+</svg>
