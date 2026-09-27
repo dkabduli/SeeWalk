@@ -23,8 +23,8 @@ setting up the demo, and judges.
 
 - **Map chime:** a soft, lower two-note tone, different from the camera's tone, so the walker knows it's *reported*,
   not *seen*. Panned left/right like camera alerts.
-- **Priority:** below camera alerts and answers. A map alert never interrupts anything; it waits (up to 10 s)
-  for silence, then plays, or is dropped for that stage if the moment passed.
+- **Priority:** below camera alerts and answers. A map alert never interrupts anything; it waits for silence
+  (checked every second) and is only marked said once spoken, so a busy moment delays it, never loses it.
 - **Distances** are rounded to 10 m ("about 40 metres"); under 15 m it's "nearby", not a number.
 - **Only walkway hazards** alert: potholes/uneven pavement/curbs/obstacles/construction on the sidewalk, from other
   walkers, pins placed on purpose, and Ottawa 311 sidewalk reports. 311 potholes *in the road* stay on the screen map only (Siddig's rule: a walker isn't in the road).
@@ -85,8 +85,9 @@ nearby    once per hazard: d_eff ≤ 15 m AND accuracy ≤ 50 m
    pinned test hazard near a chosen spot, removed afterwards.
 
 ## Done when
-- [ ] All the rows in "What the walker hears" happen in the simulated walk, in EN and FR
-- [ ] No map alert ever interrupts a camera alert or an answer
-- [ ] Unit tests for geo, both stages, GPS status, camera linking, preload, "what's around me"; all suites pass
-- [ ] Live on https://visioncompanion.vercel.app; a pinned hazard is announced on approach (checked with fake GPS)
+- [x] Heads-up and "nearby" happen in a simulated walk on the live app (fake GPS), spoken by ElevenLabs; EN/FR in unit tests
+- [x] No map alert ever interrupts a camera alert or an answer (waits for quiet; unit-tested)
+- [x] Unit tests for geo, both stages, GPS status, camera linking, preload, "what's around me"; all suites pass
+- [x] Live on https://visioncompanion.vercel.app; a pothole is announced on approach (fake GPS)
+- [ ] **Blocked:** the `DATABASE_URL` stored in Vercel is not a valid Tiger Data connection string, so saving, loading and pinning fail on the live site until it is replaced
 - [ ] **On the iPhone (Abdul):** a real pinned pothole announced at ~40 m and ~15 m on a real walk

@@ -146,3 +146,11 @@ def test_cron_refresh_needs_the_secret(client, monkeypatch):
     assert client.get("/hazards/city/refresh").status_code == 401
     assert client.get("/hazards/city/refresh", headers={"Authorization": "Bearer nope"}).status_code == 401
     assert client.get("/hazards/city/refresh", headers={"Authorization": "Bearer s3cret"}).json()["kept"] == 3
+
+
+def test_database_errors_never_log_the_connection_string():
+    import hazards
+    secret = 'missing "=" after "SuperSecretPassw0rd-xyz" in connection info string'
+    out = hazards.db_error(Exception(secret))
+    assert "SuperSecretPassw0rd" not in out and "DATABASE_URL" in out
+    assert hazards.db_error(ValueError("relation does not exist")) == "ValueError: relation does not exist"
