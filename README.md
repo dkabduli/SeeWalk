@@ -35,10 +35,12 @@ Regenerate after changing the flow: `python3 docs/img/make_how_it_works.py`.
 ## What it does
 
 **On its own (street alerts, on by default).** A tone in the left or right ear, then the voice: *"Stop sign on your right"*, *"Pothole ahead"*, *"Steps up ahead"*, *"Door ahead"*, *"Construction ahead"*, *"Obstacle at head height ahead"*, *"Crosswalk ahead"*, *"Traffic light ahead"* (never its colour, never "go").
+
 - Said **at first sighting**: signs up to ~15 m away, trip hazards up to ~10 m.
 - Things you can trip on are said **once more when they're under 2 m**, as a last warning.
 - Each thing is said **once, whatever its direction** (a curb at a corner doesn't repeat as you turn); again only after 30 s (45 s for signs).
 - **People, cars, chairs and benches are not announced** unprompted: in testing they never stopped. The walker asks instead.
+- After **10 seconds with nothing to warn about**, it describes the place once: *"Before you, a wide sidewalk with trees."* The same place is not repeated. A different place can be described only after another 30 seconds of quiet. It never says the path is safe or clear.
 
 **When asked** (say **"VisionCompanion"**, then the question; a chime confirms it heard):
 
@@ -52,20 +54,26 @@ Regenerate after changing the flow: `python3 docs/img/make_how_it_works.py`.
 | "…is it safe to cross?" | "I can't tell you when it's safe to cross. Listen for traffic and use your cane." |
 
 **On screen** (for a companion walking alongside, and for low-vision users):
-- The phrase in large type with a direction arrow, coloured by urgency, plus the **last two alerts faded** underneath.
+
+- The phrase in large type with a direction arrow, coloured by urgency, plus the **last two alerts faded** underneath. The panel stays one height, so the camera picture does not jump when the words change.
+- A long **"read this"** answer shows four lines and scrolls inside that panel. The last line fades while there is more below.
 - The **edge of the camera view glows** on the side the alert came from (red urgent, amber warning, white information).
+- While walking, the status is a **white dot that breathes**. It turns **red** only for no connection or a blocked camera. The top bar stays one line, in English and in French.
 - A Siri-style pill: **Listening…** (bars follow the walker's voice), **Thinking…**, then the voice's name (**River**) with bars that follow her actual voice.
-- **Four ElevenLabs voices** (River, Alice, Charlie, Moyo); tap one to choose it and hear it.
+- **Four ElevenLabs voices** (River, Alice, Charlie, Moyo). One tap chooses a voice and plays a sample. Samples play with the iPhone ringer off.
 - **English / Français** in one tap: screen, clips, voice commands and answers all switch. The server makes sure French mode never speaks English.
 - **Opens like an app:** Share → Add to Home Screen gives a "Companion" icon that runs full screen.
+- The camera locks to the **main rear lens** at 1080p, with continuous focus where the phone allows it, so the picture does not hop to the ultra-wide lens up close.
 
 **Fails out loud.** Silence never means "all clear" by accident:
 
 | Condition | What the walker hears |
 |---|---|
 | 2 failed checks in a row | low tone + "No connection, I can't see right now" (every 20 s; "Connection back" on recovery) |
-| Lens covered / camera stops | low tone + "Camera blocked" |
-| Asked, image too blurry or dark | "Unclear" |
+| Lens covered, or Gemini can't see a dark frame twice in a row | low tone + "Camera blocked" |
+| A dark street Gemini can still read | the hazard, as in daylight. Not "Camera blocked" |
+| Three dark snapshots in a row (~2.5 s) | the flashlight comes on, on iPhones where Safari allows it, and stays on until Stop |
+| Asked, image too blurry or fully black | "Unclear" |
 | Asked, nothing there | "Nothing detected" (never "clear" or "safe", in either language) |
 | An answer is taking more than 3 s | a soft double pulse until it arrives |
 
@@ -73,7 +81,7 @@ Regenerate after changing the flow: `python3 docs/img/make_how_it_works.py`.
 
 ## How it works: the data flow
 
-**In plain English:** the phone shows a live camera feed, but nobody presses a shutter. Every **0.8 s** the app grabs **one still snapshot** and sends it to our server, with up to **two at Gemini at once**, so a fresh look arrives about every second even though each answer takes ~1.6–2 s. Gemini returns structured hazards (e.g. *pothole, ahead, near, 0.95 confidence, "Pothole ahead"*). The phone decides whether it's worth saying and plays a **pre-recorded ElevenLabs clip** for it instantly. Nothing is saved to the camera roll.
+**In plain English:** the phone shows a live camera feed, but nobody presses a shutter. Every **0.8 s** the app grabs **one still snapshot** and sends it to our server, with up to **two at Gemini at once**, so a fresh look arrives about every second even though each answer takes ~1.6–2 s. Gemini returns structured hazards (e.g. *pothole, ahead, near, 0.95 confidence, "Pothole ahead"*). The phone decides whether it's worth saying and plays a **pre-recorded ElevenLabs clip** for it instantly. Nothing is saved to the camera roll. A dark street still goes to Gemini. iOS is left to choose the frame rate, so the exposure can lengthen at night.
 
 ```
  PHONE (iPhone Safari, worn on chest)                     SERVER (FastAPI, on the laptop)
@@ -199,10 +207,12 @@ Shared contract: [docs/prd/README.md](docs/prd/README.md). Demo video + live dem
 
 ## Run it
 
-**Hosted: https://visioncompanion.vercel.app** (Vercel: the app as static files, the FastAPI server as
-one Python function via [`api/index.py`](api/index.py); keys in the Vercel project's environment
-variables; a Vercel Firewall rule limits `/api` to 400 requests a minute per address). Redeploy from
-the repo root with `vercel deploy --prod`.
+**Hosted:** [https://visioncompanion.vercel.app](https://visioncompanion.vercel.app)
+
+- The phone app is static files. The FastAPI server is one Python function, [`api/index.py`](api/index.py).
+- Keys live in the Vercel project's environment variables.
+- A firewall rule limits `/api` to 400 requests a minute per address.
+- Redeploy from the repo root with `vercel deploy --prod`.
 
 **On a laptop** (the backup): the iPhone reaches it through an HTTPS tunnel. Needs **Python 3.10+** and Node 20+.
 
