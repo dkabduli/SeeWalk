@@ -63,7 +63,9 @@ Urgency: 1 = immediate danger within ~2 m (a drop-off or stairs down, a pothole 
 obstacle, a closed glass door the walker is walking into, something moving at the walker). 2 = obstacle or surface problem in the path.
 3 = information (crosswalk, stop sign, traffic light). A pole or a chair is urgency 2.
 Never guess: if it isn't clearly visible, leave it out. At most 3 hazards, most important first.
-If the image is too blurry or dark, set unclear=true. Never say anything is safe to cross.
+At night, use street lights, headlights, reflections and lit signs to see; a dark but readable street is not
+unclear. Set unclear=true only if the path can't be seen at all (too blurry, black, or something covering the
+lens, like a finger). Never say anything is safe to cross.
 If a previous frame is given, use it only to judge whether things are approaching.
 Also fill summary: the specific things in front that are not already a hazard, at most 12 words. Name them
 (a water fountain, red couches, an elevator, an open doorway). A vague "hallway" is not enough. If elevator

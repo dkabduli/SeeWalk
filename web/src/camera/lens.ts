@@ -17,13 +17,25 @@ export function mainBackCamera(cameras: CameraInfo[]): string | null {
   return main?.deviceId ?? null;
 }
 
-/** 1080p at 30 fps: ~6x the detail of the 640x480 iOS gives when nothing is asked for.
- *  (iOS rotates it to 1080x1920 when the phone is upright.) */
+/** 1080p: ~6x the detail of the 640x480 iOS gives when nothing is asked for (iOS rotates it to
+ *  1080x1920 when the phone is upright). No frame rate is asked for, so at night iOS can slow the
+ *  frame rate and use longer exposures; we only take a snapshot every 0.8 s anyway. */
 export const QUALITY: MediaTrackConstraints = {
   width: { ideal: 1920 },
   height: { ideal: 1080 },
-  frameRate: { ideal: 30 },
 };
+
+/** The flashlight at night. The phone's auto-exposure keeps most scenes around the same brightness,
+ *  so a snapshot only comes out dark when the scene is too dark for it: then, after 3 dark snapshots
+ *  in a row (~2.5 s), the light goes on, and stays on until the walk stops (with the light on the
+ *  scene looks lit, so switching it off by brightness would make it flicker on and off). */
+export const DARK = 45;
+export interface Light { on: boolean; dark: number }
+export function nextLight(light: Light, brightness: number): Light {
+  if (light.on) return light;
+  const dark = brightness < DARK ? light.dark + 1 : 0;
+  return { on: dark >= 3, dark };
+}
 
 type Caps = Record<string, unknown>;
 

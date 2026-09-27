@@ -44,6 +44,7 @@ vi.mock("./useCamera", () => ({
     start: cam.start,
     stop: cam.stop,
     isLive: () => cam.live,
+    adjustLight: () => {},
   }),
 }));
 
@@ -430,22 +431,57 @@ describe("useWalkLoop", () => {
     expect(calls).toHaveLength(0);
   });
 
-  it("covered lens: camera_blocked after 2 snapshots, and covered frames aren't sent", async () => {
+  const UNCLEAR: SceneResult = { hazards: [], unclear: true };
+
+  it("covered lens: still checked by Gemini; camera_blocked once it can't see anything twice in a row", async () => {
     nextFrame = { brightness: 40, contrast: 3 }; // flat, dim: a finger over the lens
     const { walk, onSystem } = setup();
     act(() => { void walk().start(); });
     await tick();
-    expect(onSystem).not.toHaveBeenCalled();
-    await tick(1500);
+    expect(calls).toHaveLength(1);              // a dim frame still goes to Gemini (could be night)
+    calls[0].resolve(UNCLEAR);
+    await tick();
+    expect(onSystem).not.toHaveBeenCalled();    // one look isn't enough
+    await tick(800);
+    calls[1].resolve(UNCLEAR);
+    await tick();
     expect(onSystem).toHaveBeenCalledWith("camera_blocked");
-    expect(onSystem).toHaveBeenCalledTimes(1);
-    await tick(1500);
-    expect(onSystem).toHaveBeenCalledTimes(1); // said once, not every snapshot
-    expect(calls).toHaveLength(0);
+    await tick(800);
+    calls[2].resolve(UNCLEAR);
+    await tick();
+    expect(onSystem).toHaveBeenCalledTimes(1);  // said once, not every snapshot
 
     nextFrame = { brightness: 120, contrast: 40 }; // finger removed
     await tick(800);
-    expect(calls).toHaveLength(1);
+    calls[calls.length - 1].resolve(RESULT);
+    await tick();
+    expect(onSystem).toHaveBeenCalledTimes(1);
+  });
+
+  it("a dark street at night (dim and flat) is not 'blocked': Gemini can see, so alerts are spoken", async () => {
+    nextFrame = { brightness: 20, contrast: 9 };  // measured: night photos at 1/4 brightness
+    const { walk, onSystem, onResult } = setup();
+    act(() => { void walk().start(); });
+    for (let i = 0; i < 4; i++) {
+      await tick(i === 0 ? 0 : 800);
+      calls[calls.length - 1].resolve(RESULT);   // Gemini finds the stop sign in the dark
+      await tick();
+    }
+    expect(onSystem).not.toHaveBeenCalledWith("camera_blocked");
+    expect(onResult).toHaveBeenCalledWith(RESULT);
+  });
+
+  it("What's ahead? with the lens covered answers camera_blocked", async () => {
+    nextFrame = { brightness: 40, contrast: 3 };
+    const { walk } = setup();
+    act(() => { void walk().start(); });
+    await tick();
+    let answer: unknown;
+    act(() => { void walk().checkNow().then((a) => { answer = a; }); });
+    await tick(900);
+    calls.forEach((c) => c.resolve(UNCLEAR));
+    await tick();
+    expect(answer).toEqual({ ok: false, reason: "camera_blocked" });
   });
 
   it("a bright blank wall is not 'covered'", async () => {

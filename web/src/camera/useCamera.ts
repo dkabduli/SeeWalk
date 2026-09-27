@@ -1,6 +1,6 @@
 import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import { sendToLaptop } from "../debug/laptopLog";
-import { mainBackCamera, QUALITY, tuning } from "./lens";
+import { mainBackCamera, nextLight, QUALITY, tuning, type Light } from "./lens";
 
 let mainLens: string | null = null; // remembered for this visit, so later starts open it directly
 
@@ -24,10 +24,13 @@ async function steady(track: MediaStreamTrack | undefined) {
 export function useCamera(onEnded: () => void) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  // The flashlight, on iPhones where Safari offers it (it lists "torch" in the camera's capabilities)
+  const light = useRef<Light>({ on: false, dark: 0 });
   const onEndedRef = useRef(onEnded);
   useLayoutEffect(() => { onEndedRef.current = onEnded; });
 
   const stop = useCallback(() => {
+    light.current = { on: false, dark: 0 };                  // stopping the track turns the light off
     streamRef.current?.getTracks().forEach((t) => t.stop()); // page-initiated stop never fires "ended"
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
@@ -61,6 +64,23 @@ export function useCamera(onEnded: () => void) {
     await video.play();
   }, [stop]);
 
+  const adjustLight = useCallback((brightness: number) => {
+    const track = streamRef.current?.getVideoTracks()[0];
+    if (!track || light.current.on) return;
+    const next = nextLight(light.current, brightness);
+    light.current = next;
+    if (!next.on) return;
+    const caps = (track.getCapabilities?.() ?? {}) as Record<string, unknown>;
+    const at = new Date().toLocaleTimeString([], { hour12: false });
+    if (!caps.torch) {
+      sendToLaptop({ at, kind: "camera", text: `dark (brightness ${Math.round(brightness)}); no flashlight on this phone` });
+      return;
+    }
+    track.applyConstraints({ advanced: [{ torch: true } as MediaTrackConstraintSet] })
+      .then(() => sendToLaptop({ at, kind: "camera", text: `dark (brightness ${Math.round(brightness)}): flashlight on` }))
+      .catch((e: Error) => sendToLaptop({ at, kind: "camera", text: `flashlight failed: ${e.name}` }));
+  }, []);
+
   /** True while the camera is actually delivering frames. iOS "mutes" the track during
    *  interruptions (a call, Siri, the page being hidden) and unmutes it afterwards. */
   const isLive = useCallback(() => {
@@ -68,5 +88,5 @@ export function useCamera(onEnded: () => void) {
     return !!track && track.readyState === "live" && !track.muted;
   }, []);
 
-  return useMemo(() => ({ videoRef, start, stop, isLive }), [start, stop, isLive]);
+  return useMemo(() => ({ videoRef, start, stop, isLive, adjustLight }), [start, stop, isLive, adjustLight]);
 }

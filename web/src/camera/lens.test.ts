@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mainBackCamera, tuning } from "./lens";
+import { mainBackCamera, nextLight, tuning, type Light } from "./lens";
 
 const cams = (...labels: string[]) => labels.map((label, i) => ({ deviceId: `id${i}`, label }));
 
@@ -40,5 +40,28 @@ describe("camera tuning", () => {
   it("asks for nothing the phone doesn't support", () => {
     expect(tuning({})).toEqual({});
     expect(tuning({ focusMode: ["manual"] })).toEqual({});
+  });
+});
+
+describe("flashlight at night", () => {
+  const run = (brightness: number[]) =>
+    brightness.reduce<Light[]>((all, b) => [...all, nextLight(all.at(-1) ?? { on: false, dark: 0 }, b)], []);
+
+  it("comes on after 3 dark snapshots in a row", () => {
+    expect(run([30, 30]).at(-1)!.on).toBe(false);
+    expect(run([30, 30, 30]).at(-1)!.on).toBe(true);
+  });
+
+  it("a passing shadow (one or two dark snapshots) doesn't turn it on", () => {
+    expect(run([30, 30, 100, 30, 30, 100]).some((l) => l.on)).toBe(false);
+  });
+
+  it("once on, it stays on for the rest of the walk (no flicker)", () => {
+    const states = run([20, 20, 20, 140, 200, 250, 30]);
+    expect(states.slice(2).every((l) => l.on)).toBe(true);
+  });
+
+  it("an ordinary night street the phone can expose (brightness 60+) keeps it off", () => {
+    expect(run([63, 75, 61, 94, 71]).some((l) => l.on)).toBe(false);
   });
 });

@@ -131,6 +131,10 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
     let fails = 0;
     let lastNoConn = 0;
     let blockedCount = 0;
+    // A frame that looks covered (dim and flat) might just be a dark street at night. It still goes
+    // to Gemini, and "Camera blocked" is said only when Gemini can't see anything either, twice in
+    // a row. At night Gemini still read stop signs and crosswalks in frames a quarter as bright.
+    let dimUnclear = 0;
     // Requests of THIS loop at Gemini. A stopped loop's late answers must not touch a new loop's
     // count, so it's local and mirrored into inFlight (read by checkNow) only while current.
     let flying = 0;
@@ -150,7 +154,7 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
       return mine;
     };
 
-    const send = async (b64: string, careful: boolean) => {
+    const send = async (b64: string, careful: boolean, dim = false) => {
       const seq = ++sent;
       setFlying(flying + 1);
       if (careful) carefulFlying += 1;
@@ -162,6 +166,13 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
         if (!alive()) return; // stopped while we were waiting: drop it
         if (fails >= 2) onSystemRef.current("connection_back");
         fails = 0;
+        if (dim && result.unclear) {
+          dimUnclear += 1;
+          if (dimUnclear === 2) onSystemRef.current("camera_blocked");
+          takeAskers(careful).forEach((a) => a.resolve({ ok: false, reason: "camera_blocked" }));
+          return;
+        }
+        if (!result.unclear) dimUnclear = 0;
         const waiting = takeAskers(careful);
         // A fast photo can become a street alert. A question photo is spoken by the asker.
         // Sent before a language switch: it's in the old language, so it isn't spoken
@@ -206,16 +217,18 @@ export function useWalkLoop({ lang, onResult, onSystem }: Options) {
       }
       const video = camera.videoRef.current;
       const frame = video && camera.isLive() ? captureFrame(video) : null;
-      const blocked = !camera.isLive() || (frame !== null && looksCovered(frame));
+      const blocked = !camera.isLive(); // the camera stopped delivering frames (iOS interruption)
+      const dim = frame !== null && looksCovered(frame);
       blockedCount = blocked ? blockedCount + 1 : 0;
       if (blockedCount === 2) onSystemRef.current("camera_blocked");
+      if (frame) camera.adjustLight(frame.brightness); // flashlight on when it's dark (where supported)
 
       if (blocked) lastSample = null;
       const sameScene = !!frame?.sample && !!lastSample && !sceneChanged(lastSample, frame.sample) && performance.now() - lastSentAt < SAME_HOLD_MS;
       if (frame && !blocked && (asked || !sameScene)) {
         if (frame.sample) lastSample = frame.sample;
         lastSentAt = performance.now();
-        void send(frame.b64, wantsCareful);
+        void send(frame.b64, wantsCareful, dim);
       } else if (blocked) {
         askers.current.splice(0).forEach((a) => a.resolve({ ok: false, reason: "camera_blocked" }));
       } else if (asked) {
