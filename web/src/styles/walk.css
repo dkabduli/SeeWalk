@@ -33,25 +33,39 @@
 .walk button:focus-visible { outline: 3px solid var(--white); outline-offset: 3px; }
 
 /* Top bar: wordmark, status, language */
-.walk .bar { display: flex; align-items: center; gap: 10px; min-height: 40px; }
+/* One fixed height: if "No connection" wrapped to two lines, the bar grew and the camera shrank */
+.walk .bar { display: flex; align-items: center; gap: 10px; height: 40px; flex: none; }
 .walk .brand {
   margin-right: auto; font-size: 18px; font-weight: 800; letter-spacing: -0.4px;
-  display: inline-flex; align-items: center;
+  min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; /* never pushes the rest off */
 }
 .walk .brand b { font-weight: 800; }
 .walk .brand::after {        /* the red tip of a white cane */
-  content: ""; width: 22px; height: 4px; margin-left: 8px; border-radius: 2px;
+  content: ""; display: inline-block; vertical-align: middle;
+  width: 22px; height: 4px; margin-left: 8px; border-radius: 2px;
   background: linear-gradient(90deg, var(--white) 0 60%, var(--red) 60%);
+}
+.walk .status, .walk .lang { flex: none; }
+/* Walking on a phone-width screen: room for "Camera blocked" / "Pas de connexion" on one line */
+@media (max-width: 410px) {
+  .walk.is-walking .brand { font-size: 17px; }
+  .walk.is-walking .brand::after { display: none; }
 }
 .walk .mock { background: var(--red); color: var(--white); font-size: 12px; font-weight: 800; padding: 3px 8px; border-radius: 6px; }
 .walk .status {
-  display: inline-flex; align-items: center; gap: 7px;
+  display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
   font-size: 15px; font-weight: 600; color: var(--muted);
 }
 .walk .listen-for { margin: 0; font-size: 15px; font-weight: 600; color: var(--muted); }
 .walk .status::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
 .walk .status.walking { color: var(--text); }
-.walk .status.walking::before { background: var(--red); box-shadow: 0 0 10px var(--red); }
+/* Walking: a white dot that softly breathes (alive). Red is kept for problems (no connection,
+   camera blocked), so a working walk and a broken one never look alike. */
+.walk .status.walking::before { background: var(--white); box-shadow: 0 0 8px rgb(255 255 255 / 0.7); }
+@media (prefers-reduced-motion: no-preference) {
+  .walk .status.walking::before { animation: walk-live 2.4s ease-in-out infinite; }
+}
+@keyframes walk-live { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
 .walk .status.noConn, .walk .status.blocked { color: var(--red); }
 .walk .status.noConn::before, .walk .status.blocked::before { background: var(--red); }
 .walk .setting {

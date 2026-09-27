@@ -2,7 +2,7 @@ import type { Lang } from "../api/types";
 
 export const strings: Record<Lang, Record<string, string>> = {
   en: {
-    start: "Start walk", stop: "Stop", ahead: "What's ahead?", lang: "Français",
+    start: "Start walk", stop: "Stop", ahead: "What's ahead?", lang: "Français", langShort: "FR",
     walking: "Walking", idle: "Ready", noConn: "No connection", blocked: "Camera blocked",
     tagline: "A white cane finds the ground. VisionCompanion finds everything else.",
     step1: "Hang the phone on your chest, rear camera facing forward.",
@@ -26,7 +26,7 @@ export const strings: Record<Lang, Record<string, string>> = {
     crossRefusal: "I can't tell when it's safe to cross. Listen for traffic.",
   },
   fr: {
-    start: "Commencer", stop: "Arrêter", ahead: "Qu'y a-t-il devant\u00a0?", lang: "English",
+    start: "Commencer", stop: "Arrêter", ahead: "Qu'y a-t-il devant\u00a0?", lang: "English", langShort: "EN",
     walking: "En marche", idle: "Prêt", noConn: "Pas de connexion", blocked: "Caméra bloquée",
     tagline: "La canne blanche trouve le sol. VisionCompanion trouve tout le reste.",
     step1: "Portez le téléphone sur la poitrine, caméra arrière vers l'avant.",

@@ -459,7 +459,8 @@ export default function WalkMode() {
         <span className="brand" aria-label="VisionCompanion">Vision<b>Companion</b></span>
         {MOCK && <span className="mock">MOCK</span>}
         <span className={`status ${status}`} role="status">{t[status]}</span>
-        <button className="lang" onClick={switchLang} lang={lang === "en" ? "fr" : "en"}>{t.lang}</button>
+        {/* "FR" / "EN" on screen so the bar fits "Camera blocked" on one line; VoiceOver reads the full name */}
+        <button className="lang" onClick={switchLang} lang={lang === "en" ? "fr" : "en"} aria-label={t.lang}>{t.langShort}</button>
       </header>
       {walking && <p className="listen-for">{t.listening}</p>}
 
