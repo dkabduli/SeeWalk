@@ -117,7 +117,16 @@ def test_near_passes_the_walk_so_it_skips_its_own_sightings(client, monkeypatch)
     monkeypatch.setattr(db, "near", near)
     assert client.get("/hazards/near?lat=45.42&lon=-75.68&session_id=walk-1").json() == {"near": [{"id": "311:1", "metres": 12.0}]}
     assert seen == {"lat": 45.42, "lon": -75.68, "radius": 60, "exclude_session": "walk-1", "walkway_only": True}
-    assert client.get("/hazards/near?lat=45.42&lon=-75.68&radius=500").status_code == 422
+    # A walk loads everything within 1.5 km once at Start (location alerts); more than 2 km is refused
+    assert client.get("/hazards/near?lat=45.42&lon=-75.68&radius=1500").status_code == 200
+    assert client.get("/hazards/near?lat=45.42&lon=-75.68&radius=2500").status_code == 422
+
+
+def test_a_hazard_pinned_on_the_map_page_is_saved(client):
+    # someone standing beside a real pothole pinned it: saved (and, unlike test pins, announced to walkers)
+    r = client.post("/hazards", json={**REPORT, "source": "pinned", "confidence": 1})
+    assert r.json()["saved"] is True
+    assert client.saved[-1]["source"] == "pinned"
 
 
 def test_briefing_route(client, monkeypatch):
@@ -137,3 +146,11 @@ def test_cron_refresh_needs_the_secret(client, monkeypatch):
     assert client.get("/hazards/city/refresh").status_code == 401
     assert client.get("/hazards/city/refresh", headers={"Authorization": "Bearer nope"}).status_code == 401
     assert client.get("/hazards/city/refresh", headers={"Authorization": "Bearer s3cret"}).json()["kept"] == 3
+
+
+def test_database_errors_never_log_the_connection_string():
+    import hazards
+    secret = 'missing "=" after "SuperSecretPassw0rd-xyz" in connection info string'
+    out = hazards.db_error(Exception(secret))
+    assert "SuperSecretPassw0rd" not in out and "DATABASE_URL" in out
+    assert hazards.db_error(ValueError("relation does not exist")) == "ValueError: relation does not exist"

@@ -33,12 +33,23 @@ class HazardReport(BaseModel):
     lon: float = Field(ge=-180, le=180)
     type: MapType
     confidence: float = Field(ge=0, le=1)
-    source: Literal["gemini", "fast_layer", "test"] = "gemini"  # test: pins dropped by hand from the map page
+    # test: automated smoke tests (never announced). pinned: a person pinned a real hazard on the map page
+    # (e.g. standing beside a pothole): announced to walkers like a sighting.
+    source: Literal["gemini", "fast_layer", "test", "pinned"] = "gemini"
 
 
 class SaveResult(BaseModel):
     saved: bool
     reason: Literal["saved", "duplicate", "low_confidence"]
+
+
+def db_error(e: Exception) -> str:
+    """What to log about a database error. psycopg repeats parts of a malformed connection string
+    (i.e. the password) in its messages, so for connection problems only the kind is logged."""
+    msg = str(e)
+    if "connection" in msg.lower() or "password" in msg.lower() or "DATABASE_URL" in msg:
+        return f"{type(e).__name__} (connection problem: check DATABASE_URL; details hidden)"
+    return f"{type(e).__name__}: {msg[:200]}"
 
 
 def _require_db():
@@ -59,7 +70,7 @@ def save_hazard(report: HazardReport):
         row = db.save_report(session_id=report.session_id, lat=report.lat, lon=report.lon,
                              hazard_type=report.type, confidence=report.confidence, source=report.source)
     except psycopg.Error as e:
-        log.warning("hazard save failed: %s", e)
+        log.warning("hazard save failed: %s", db_error(e))
         raise HTTPException(503, "Hazard map database unavailable")
     return SaveResult(saved=row is not None, reason="saved" if row else "duplicate")
 
@@ -70,7 +81,7 @@ def get_hazards(days: float = Query(7, gt=0, le=365), types: list[MapType] | Non
     try:
         rows = db.list_reports(since=_since(days), types=types)
     except psycopg.Error as e:
-        log.warning("hazard list failed: %s", e)
+        log.warning("hazard list failed: %s", db_error(e))
         raise HTTPException(503, "Hazard map database unavailable")
     return {"hazards": rows}
 
@@ -81,7 +92,7 @@ def get_hotspots(days: float = Query(7, gt=0, le=365), limit: int = Query(10, ge
     try:
         return {"hotspots": db.hotspots(since=_since(days), limit=limit)}
     except psycopg.Error as e:
-        log.warning("hotspots failed: %s", e)
+        log.warning("hotspots failed: %s", db_error(e))
         raise HTTPException(503, "Hazard map database unavailable")
 
 
@@ -97,19 +108,19 @@ def get_city_reports(south: float = Query(ge=-90, le=90), west: float = Query(ge
     try:
         return {"reports": db.city_in_bbox(south=south, west=west, north=north, east=east)}
     except psycopg.Error as e:
-        log.warning("city reports failed: %s", e)
+        log.warning("city reports failed: %s", db_error(e))
         raise HTTPException(503, "Hazard map database unavailable")
 
 
 @router.get("/hazards/near")
 def get_near(lat: float = Query(ge=-90, le=90), lon: float = Query(ge=-180, le=180),
-             radius: float = Query(60, gt=0, le=100), session_id: str = Query("", max_length=64)):
+             radius: float = Query(60, gt=0, le=2000), session_id: str = Query("", max_length=64)):
     """Known hazards around the walker, nearest first: open city reports + other walkers' sightings."""
     _require_db()
     try:
         return {"near": db.near(lat=lat, lon=lon, radius=radius, exclude_session=session_id or None, walkway_only=True)}
     except psycopg.Error as e:
-        log.warning("near failed: %s", e)
+        log.warning("near failed: %s", db_error(e))
         raise HTTPException(503, "Hazard map database unavailable")
 
 
@@ -126,7 +137,7 @@ async def post_briefing(req: BriefingRequest):
     try:
         return await briefing.brief(req.lat, req.lon, req.lang)
     except psycopg.Error as e:
-        log.warning("briefing failed: %s", e)
+        log.warning("briefing failed: %s", db_error(e))
         raise HTTPException(503, "Hazard map database unavailable")
 
 
@@ -139,5 +150,5 @@ def refresh_city(authorization: str = Header("")):
     try:
         return city311.refresh()
     except Exception as e:  # download, CSV format or database: report it, keep yesterday's data
-        log.warning("311 refresh failed: %s", e)
+        log.warning("311 refresh failed: %s", db_error(e))
         raise HTTPException(502, f"311 refresh failed: {type(e).__name__}")

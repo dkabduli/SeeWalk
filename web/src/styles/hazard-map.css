@@ -78,3 +78,7 @@
 .hmap .dot.ring { background: #fff; box-shadow: 0 0 0 3px var(--ink); }
 .hmap-note { margin: 0; color: var(--muted); font-size: 13px; }
 .hmap-brief { margin: 0; padding: 8px 10px; border-radius: 10px; background: #efece4; font-size: 14px; }
+
+/* "You are here" line and the pin type picker */
+.hmap-here { margin: 0; font-size: 14px; }
+.hmap-test select { font: inherit; padding: 6px 8px; border-radius: 10px; }

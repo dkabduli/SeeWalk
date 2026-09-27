@@ -77,6 +77,7 @@ def test_gemini_down_falls_back(monkeypatch):
 
 def test_sidewalk_problems_come_before_many_road_potholes(monkeypatch):
     monkeypatch.setattr(db, "near", lambda **kw: ROAD + list(ITEMS))  # road ones are nearer and more numerous
+    monkeypatch.setattr(config, "GEMINI_API_KEY", "")  # the plain summary (passes with or without a real key)
     out = run()
     assert out["text"] == ("8 reported problems within 300 metres: lifted or sunken sidewalk panel (2), pothole (1), "
                            "pothole in the road (5).")

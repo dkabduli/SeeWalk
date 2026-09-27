@@ -21,6 +21,9 @@ export interface HazardReporter {
 
 interface Deps {
   geolocation?: Geolocation;
+  /** Every GPS reading and error, for the location alerts (docs/prd/location-alerts.md). */
+  onFix?: (p: GeolocationPosition) => void;
+  onError?: (code: number) => void;
   send?: (r: HazardReport) => unknown;
   now?: () => number;
 }
@@ -30,6 +33,8 @@ export function startHazardReporter({
   geolocation = typeof navigator !== "undefined" ? navigator.geolocation : undefined,
   send = sendReport,
   now = Date.now,
+  onFix,
+  onError,
 }: Deps = {}): HazardReporter {
   const sessionId = crypto.randomUUID();
   let fix: GeolocationPosition | null = null;
@@ -37,8 +42,8 @@ export function startHazardReporter({
 
   // Location is optional: if it's denied or unavailable, the walk works and nothing is reported.
   const watchId = geolocation?.watchPosition(
-    (p) => { fix = p; },
-    () => { fix = null; },
+    (p) => { fix = p; onFix?.(p); },
+    (e) => { fix = null; onError?.(e.code); },
     { enableHighAccuracy: true, maximumAge: 5000, timeout: 20_000 },
   );
 

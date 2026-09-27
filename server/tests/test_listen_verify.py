@@ -70,3 +70,13 @@ def test_french_dictation_of_the_wake_word_and_french_phrasings():
     assert verified_intent("whats_ahead", "SeeWalk, qu'est-ce qu'il y a?") == "whats_ahead"
     assert verified_intent("whats_ahead", "SeeWalk, qu'y a-t-il devant ?") == "whats_ahead"
     assert verified_intent("whats_ahead", "Cette walk qu'il y a") == "none"   # no wake word
+
+
+def test_whats_around_me_is_the_map_read_aloud():
+    for heard in ["VisionCompanion, what's around me?", "SeeWalk, anything reported nearby?",
+                  "Vision Companion, qu'y a-t-il autour de moi ?", "SeeWalk, quelque chose de signalé à proximité ?"]:
+        assert verified_intent("around", heard) == "around", heard
+        assert verified_intent("whats_ahead", heard) == "around", heard  # the model's guess corrected
+    assert verified_intent("around", "what's around me?") == "none"          # no wake word
+    assert verified_intent("whats_ahead", "SeeWalk, what's ahead?") == "whats_ahead"
+    assert verified_intent("holding", "SeeWalk, what am I holding near me?") == "holding"  # not stolen

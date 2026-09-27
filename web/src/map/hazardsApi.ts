@@ -13,7 +13,7 @@ export interface HazardReport {
   lon: number;
   type: MapType;
   confidence: number;
-  source: "gemini" | "fast_layer" | "test";
+  source: "gemini" | "fast_layer" | "test" | "pinned";
 }
 
 export interface MapHazard {

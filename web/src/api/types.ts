@@ -26,7 +26,7 @@ export interface SceneResult {
 export type SystemEvent = "no_connection" | "connection_back" | "camera_blocked";
 
 /** Voice commands ("SeeWalk, …"). whats_ahead, path, and cross are answered by the app itself. */
-export type VoiceIntent = "none" | "whats_ahead" | "holding" | "path" | "read" | "cross" | "where";
+export type VoiceIntent = "none" | "whats_ahead" | "holding" | "path" | "read" | "cross" | "where" | "around";
 
 /** POST /listen: what the mic heard, which command it was, and Gemini's answer from the frame. */
 export interface ListenResult {
