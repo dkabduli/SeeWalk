@@ -55,8 +55,30 @@ describe("pickAlert", () => {
   });
 
   it("a hazard (not information) in a new direction is new", () => {
-    mod.pickAlert(scene(hz({ type: "person", direction: "left", urgency: 2 })));
-    expect(mod.pickAlert(scene(hz({ type: "person", direction: "right", urgency: 2 })))).not.toBeNull();
+    mod.pickAlert(scene(hz({ type: "bike", direction: "left", urgency: 2 })));
+    expect(mod.pickAlert(scene(hz({ type: "bike", direction: "right", urgency: 2 })))).not.toBeNull();
+  });
+
+  it("one 'Person ahead' covers everyone for 15 s, whatever the side, plus one close-up warning", () => {
+    const person = (p: Partial<Hazard>) => hz({ type: "person", urgency: 2, phrase: "Person ahead", ...p });
+    expect(mod.pickAlert(scene(person({})))).not.toBeNull();
+    vi.setSystemTime(3000);
+    expect(mod.pickAlert(scene(person({ direction: "left", phrase: "Person on your left" })))).toBeNull();
+    vi.setSystemTime(5000);
+    expect(mod.pickAlert(scene(person({ distance: "close" })))).not.toBeNull(); // the last warning
+    vi.setSystemTime(8000);
+    expect(mod.pickAlert(scene(person({ distance: "close" })))).toBeNull();
+    vi.setSystemTime(20_001);
+    expect(mod.pickAlert(scene(person({})))).not.toBeNull();
+  });
+
+  it("a second pothole is said after 12 s, not 30 s", () => {
+    const hole = hz({ type: "pothole", urgency: 2, phrase: "Pothole ahead" });
+    expect(mod.pickAlert(scene(hole))).not.toBeNull();
+    vi.setSystemTime(11_000);
+    expect(mod.pickAlert(scene(hole))).toBeNull();
+    vi.setSystemTime(12_001);
+    expect(mod.pickAlert(scene(hole))).not.toBeNull();
   });
 
   it("'What's ahead?' (ignoreRepeat) answers even if just said, without muting it later", () => {
@@ -157,19 +179,40 @@ describe("when to say it", () => {
     expect(mod.streetClip(hz({ type: "door" }))).toBe("st_door_ahead");
     expect(mod.streetClip(hz({ type: "pillar" }))).toBe("st_pillar_ahead");
     expect(mod.streetClip(hz({ type: "chair", phrase: "Chair ahead" }))).toBeNull();
-    expect(mod.streetClip(hz({ type: "person" }))).toBeNull();
+    expect(mod.streetClip(hz({ type: "person" }))).toBe("person_ahead");
+    expect(mod.streetClip(hz({ type: "car", direction: "left" }))).toBe("car_left");
   });
 });
 
 describe("streetOnly", () => {
-  it("keeps street hazards, including a pillar, and drops people, chairs, poles and other objects", () => {
+  it("keeps street hazards, a pillar and a nearby person; drops parked cars, chairs, poles and other objects", () => {
     const r = mod.streetOnly(scene(
       hz({ type: "person", urgency: 2 }), hz({ type: "car" }), hz({ type: "obstacle_in_path", urgency: 2 }),
       hz({ type: "chair", urgency: 2, phrase: "Chair ahead" }), hz({ type: "pole", urgency: 2, phrase: "Pole ahead" }),
       hz({ type: "other" }), hz({ type: "pothole", urgency: 1 }), hz({ type: "stop_sign" }),
       hz({ type: "pillar", urgency: 2, phrase: "Pillar ahead" }), hz({ type: "curb_or_dropoff" }),
     ));
-    expect(r.hazards.map((h) => h.type)).toEqual(["pothole", "stop_sign", "pillar", "curb_or_dropoff"]);
+    expect(r.hazards.map((h) => h.type)).toEqual(["person", "pothole", "stop_sign", "pillar", "curb_or_dropoff"]);
+  });
+
+  it("a far-away person is left out; a bike or car only when it's coming at the walker", () => {
+    const r = mod.streetOnly(scene(
+      hz({ type: "person", urgency: 2, distance: "far" }),
+      hz({ type: "car", urgency: 1, approaching: true, distance: "near", phrase: "Car ahead" }),
+      hz({ type: "bike", urgency: 2, approaching: true, distance: "far", phrase: "Bike ahead" }),
+      hz({ type: "bike", urgency: 2, approaching: false, distance: "close", phrase: "Bike ahead" }),
+    ));
+    expect(r.hazards.map((h) => `${h.type}/${h.distance}`)).toEqual(["car/near"]);
+  });
+
+  it("priority: immediate danger, then obstacles / people / stop signs, then other information", () => {
+    expect(mod.alertPriority(hz({ type: "pothole", urgency: 1 }))).toBe(0);
+    expect(mod.alertPriority(hz({ type: "pothole", urgency: 2 }))).toBe(1);
+    expect(mod.alertPriority(hz({ type: "person", urgency: 2 }))).toBe(1);
+    expect(mod.alertPriority(hz({ type: "stop_sign", urgency: 3 }))).toBe(1);
+    expect(mod.alertPriority(hz({ type: "crosswalk", urgency: 3 }))).toBe(2);
+    expect(mod.alertPriority(hz({ type: "traffic_light", urgency: 3 }))).toBe(2);
+    expect(mod.LOW_PRIORITY).toBe(3);
   });
 
   it("keeps a door only when it is ahead", () => {

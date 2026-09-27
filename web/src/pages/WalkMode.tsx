@@ -3,7 +3,10 @@ import { MOCK, tts } from "../api/client";
 import type { Hazard, Lang, ListenResult, SceneResult, SystemEvent } from "../api/types";
 import { nextIdleLine } from "../alerts/idle";
 import { WalkMemory, withAside } from "../alerts/memory";
-import { describeAhead, describePath, fallbackClip, noteSpoken, noticeDoors, panFor, pickAlert, streetClip, streetOnly } from "../alerts/pickAlert";
+import {
+  alertPriority, describeAhead, describePath, fallbackClip, LOW_PRIORITY, noteSpoken, noticeDoors, panFor, pickAlert,
+  streetClip, streetOnly, type Priority,
+} from "../alerts/pickAlert";
 import { audio } from "../audio/AudioEngine";
 import clips from "../audio/clips.json";
 import { loadVoice, saveVoice, VOICES, type VoiceId } from "../audio/voices";
@@ -43,6 +46,27 @@ const INTRO_KEY = "visioncompanion.introPlayed";
 const introPlayed = () => { try { return localStorage.getItem(INTRO_KEY) === "1"; } catch { return false; } };
 const markIntroPlayed = () => { try { localStorage.setItem(INTRO_KEY, "1"); } catch { /* private mode */ } };
 
+// Location assistance: reported hazards from the map, spoken as the walker nears them.
+//   off:       no GPS at all during a walk (and nothing saved to the hazard map)
+//   important: only "Pothole nearby, on your left. Be careful." (within ~15 m), and "Location is off" once
+//   full:      also the 40 m heads-up, the start briefing, and GPS weak / back news
+type LocationMode = "off" | "important" | "full";
+const LOCATION_KEY = "visioncompanion.location";
+const LOCATION_MODES: LocationMode[] = ["off", "important", "full"];
+const loadLocationMode = (): LocationMode => {
+  try {
+    const v = localStorage.getItem(LOCATION_KEY);
+    return LOCATION_MODES.includes(v as LocationMode) ? (v as LocationMode) : "important";
+  } catch { return "important"; }
+};
+const saveLocationMode = (m: LocationMode) => { try { localStorage.setItem(LOCATION_KEY, m); } catch { /* private mode */ } };
+
+// A voice clip at least this long can hold "VisionCompanion, what's ahead?": start the photo for the
+// answer while the server checks the words. Shorter clips (and background talk) don't cost a look.
+const PRIME_MIN_VOICE_S = 1.1;
+// Nothing speaking: any alert may start
+const NOTHING: number = 9;
+
 export default function WalkMode() {
   const [lang, setLang] = useState<Lang>("en");
   const [voice, setVoice] = useState<VoiceId>(loadVoice);
@@ -61,14 +85,22 @@ export default function WalkMode() {
   const playing = useRef(false);
   const autoAlertsRef = useRef(autoAlerts);
   useLayoutEffect(() => { autoAlertsRef.current = autoAlerts; });
+  const [locationMode, setLocationMode] = useState<LocationMode>(loadLocationMode);
+  const locationRef = useRef(locationMode);
+  useLayoutEffect(() => { locationRef.current = locationMode; });
+  // "What's ahead?" is being looked at: the button says so and ignores more taps until the answer is ready
+  const [aheadBusy, setAheadBusy] = useState(false);
+  const aheadBusyRef = useRef(false);
   const t = strings[lang];
 
   // Only one alert at a time. Each alert gets an id; if a newer one starts (urgent, or the
   // walker asked), the older one stops at its next step instead of talking over it.
   const speechId = useRef(0);
   const speaking = useRef(false);
-  // Set while a spoken question is being checked (checkingVoice) or answered (answering count)
-  const checkingVoice = useRef(false);
+  // How important the thing being said is (alertPriority). A new message only interrupts a less
+  // important one; anything else waits for the next look instead of being dropped.
+  const speechPri = useRef<number>(NOTHING);
+  // Set while a spoken question is being answered (a count: a tap and a voice question can overlap)
   const answering = useRef(0);
   const memory = useRef(new WalkMemory());
   const quietSince = useRef(Date.now());
@@ -109,12 +141,21 @@ export default function WalkMode() {
     return () => clearTimeout(t);
   }, [glow]);
 
+  /** How important the sound playing now is; NOTHING when quiet. The intro, "walk started" and
+   *  system clips count as low: a hazard may cut them off. */
+  function currentPriority(): number {
+    if (speaking.current) return speechPri.current;
+    if (audio.busy) return LOW_PRIORITY;
+    return NOTHING;
+  }
+
   const speak = useCallback(async (h: Hazard, asked = false) => {
-    const interrupt = h.urgency === 1 || asked;
-    if (!interrupt && (speaking.current || audio.busy)) return; // don't talk over ourselves
+    const pri: Priority = asked ? 0 : alertPriority(h);
+    if (pri >= currentPriority()) return;        // onResult only offers what may speak now; belt and braces
     const id = ++speechId.current;
     const current = () => speechId.current === id;
     speaking.current = true;
+    speechPri.current = pri;
     audio.stop();
     log("say", `${h.phrase} (${h.type}/${h.direction}/${h.distance} u${h.urgency}${asked ? ", asked" : ""})`);
     memory.current.add(h.phrase);
@@ -145,10 +186,13 @@ export default function WalkMode() {
         if (!current()) return;
         await audio.playSpeech(mp3, pan);
       } catch {
-        if (current() && key) await audio.playClip(lang, key, pan);
+        if (!current()) return;
+        // Live voice failed: the bundled clip, or the phone's own voice if this voice has none
+        if (key && audio.hasClip(lang, key)) await audio.playClip(lang, key, pan);
+        else await audio.speakText(h.phrase, lang);
       }
     } finally {
-      if (current()) speaking.current = false;
+      if (current()) { speaking.current = false; speechPri.current = NOTHING; }
     }
   }, [lang, voice, showAlert]);
 
@@ -168,6 +212,7 @@ export default function WalkMode() {
   const sayMapLine = useCallback(async (text: string, pan: number, direction?: Hazard["direction"]) => {
     const id = ++speechId.current;
     speaking.current = true;
+    speechPri.current = LOW_PRIORITY;             // any hazard the camera sees cuts it off
     log("say", `${text} (map)`);
     try {
       if (direction) showAlert({ text, direction, level: "info" });
@@ -177,7 +222,7 @@ export default function WalkMode() {
       const mp3 = await tts(text, lang, voice);
       if (speechId.current === id) await audio.playSpeech(mp3, pan);
     } catch { /* live voice failed: the next reading tries again for anything still due */ } finally {
-      if (speechId.current === id) speaking.current = false;
+      if (speechId.current === id) { speaking.current = false; speechPri.current = NOTHING; }
     }
   }, [lang, voice, showAlert]);
 
@@ -188,12 +233,17 @@ export default function WalkMode() {
     placesTickRef.current = () => {
       const la = places.current;
       if (!la) return;
-      for (const e of la.gpsEvents()) gpsNews.current.push(e === "off" ? t.gpsOff : e === "weak" ? t.gpsWeak : t.gpsBack);
+      const full = locationRef.current === "full";
+      for (const e of la.gpsEvents()) {
+        if (!full && e !== "off") continue;       // "Location is weak / back" chatter: full mode only
+        gpsNews.current.push(e === "off" ? t.gpsOff : e === "weak" ? t.gpsWeak : t.gpsBack);
+      }
       if (!quietNow()) return;
       const news = gpsNews.current.shift();
       if (news) { void sayMapLine(news, 0); return; }
       const a = la.next(lang);
       if (!a) return;
+      if (!full && a.stage !== "nearby") return; // the 40 m heads-up: full mode only (said when nearby instead)
       la.markSaid(a);
       const dir = a.side === "left" || a.side === "right" ? a.side : a.side === "ahead" ? "ahead" : undefined;
       void sayMapLine(a.text, a.pan, dir);
@@ -205,7 +255,11 @@ export default function WalkMode() {
     if (!autoAlertsRef.current) return;          // voice-only mode: stay quiet unless asked
     if (answering.current > 0) return;           // never talk over an answer
     const scene = noticeDoors(r);
-    const h = pickAlert(streetOnly(scene));
+    // Only what may speak now is offered: a hazard less important than what's playing isn't marked
+    // "said" and dropped, it's simply picked from the next look (~0.8 s later) if still there.
+    const open = currentPriority();
+    const street = streetOnly(scene);
+    const h = pickAlert({ ...street, hazards: street.hazards.filter((x) => alertPriority(x) < open) });
     if (h) {
       speak(h);
       return;
@@ -268,7 +322,18 @@ export default function WalkMode() {
    *  answer. If the live voice fails, the answer stays on screen and the phone's own voice says it. */
   const sayAnswer = useCallback(async (text: string, kind: string) => {
     const id = ++speechId.current;
-    log("say", `${text || "(no answer)"} (${kind}, asked)`);
+    // Scene descriptions and the map briefing are low priority: a hazard cuts them off
+    const low = kind === "idle" || kind.startsWith("briefing");
+    speaking.current = true;
+    speechPri.current = low ? LOW_PRIORITY : 0;
+    try {
+      await sayAnswerNow(id, text, kind, low);
+    } finally {
+      if (speechId.current === id) { speaking.current = false; speechPri.current = NOTHING; }
+    }
+  }, [lang, voice]); // eslint-disable-line react-hooks/exhaustive-deps
+  const sayAnswerNow = async (id: number, text: string, kind: string, low: boolean) => {
+    log("say", `${text || "(no answer)"} (${kind}${kind === "idle" ? "" : ", asked"})`);
     if (text) {
       setShown({ text, level: "info" });
       try {
@@ -279,22 +344,26 @@ export default function WalkMode() {
         log("info", `live voice failed (${(e as Error).message}): phone voice instead`);
       }
       if (speechId.current !== id) return;
+      // The phone's voice doesn't match the chosen one: only for answers the walker asked for.
+      // Scene lines and the briefing are extras, so they stay on screen, unspoken.
+      if (low) { log("info", "live voice failed: extra shown only, not spoken"); return; }
       if (!(await audio.speakText(text, lang))) log("info", "phone voice unavailable: answer shown only");
       return;
     }
     if (speechId.current !== id) return;
     setShown({ text: lang === "fr" ? "Désolé, je ne peux pas le dire" : "Sorry, I can't tell", level: "info" });
     await audio.playClip(lang, "not_sure");
-  }, [lang, voice]);
+  };
   sayIdleRef.current = (text) => { void sayAnswer(text, "idle"); };
 
-  // While a question is being checked or answered, everything else waits: no background
-  // snapshots to Gemini, no automatic alerts, no new listening. Then it all resumes.
-  const updatePause = () => walkRef.current?.setPaused(checkingVoice.current || answering.current > 0);
+  // While a question is being answered, everything else waits: no background snapshots to Gemini,
+  // no automatic alerts, no new listening. Then it all resumes. Speech that is only being checked
+  // (it may be someone else talking nearby) pauses nothing: street alerts keep running.
+  const updatePause = () => walkRef.current?.setPaused(answering.current > 0);
   const refreshBusy = () =>
     setBusy(
       playing.current ? "speaking"
-        : answering.current > 0 || checkingVoice.current ? "thinking"
+        : answering.current > 0 ? "thinking"
         : hearing.current ? "hearing"
         : "idle",
     );
@@ -311,6 +380,8 @@ export default function WalkMode() {
   async function answeringQuestion(work: () => Promise<void>) {
     answering.current++;
     speechId.current++;                          // cancel anything SeeWalk was in the middle of saying
+    speaking.current = false;                    // …and forget it, so it can't block alerts afterwards
+    speechPri.current = NOTHING;
     audio.stop();
     voiceRef.current?.hold(true);
     updatePause();
@@ -339,21 +410,16 @@ export default function WalkMode() {
         (c) => onVoiceRef.current(c),
         (msg) => log("voice", msg),
         () => { const v = videoRef.current; return v ? captureFrame(v)?.b64 ?? null : null; },
-        (checking) => {
-          checkingVoice.current = checking;
-          if (checking) hearing.current = false; // the question is over; refreshBusy below
-          updatePause();
-          if (checking) {
-            audio.playDone();                     // question finished: falling chime, then the answer
-            audio.startWorking();                 // alert only if this wait runs past 3 seconds
-            walkRef.current?.primeLook();         // the photo starts now, while the words are still being heard
-          } else if (answering.current === 0) {
-            audio.stopWorking();
-          }
+        (checking, voiceSeconds = 0) => {
+          // Not confirmed yet: it may be someone else talking. No sound, no pause; the chime and
+          // the working pulse wait for the server to confirm a command (onVoice).
+          if (checking) hearing.current = false; // the speech is over; refreshBusy below
+          // Long enough to be "VisionCompanion, <question>": start the answer's photo now
+          if (checking && voiceSeconds >= PRIME_MIN_VOICE_S) walkRef.current?.primeLook();
           refreshBusy();
         },
         () => walkRef.current?.releaseLook(),    // not a command: speak that photo as a normal alert
-        () => { audio.playWake(); setHearing(true); }, // name heard: rising chime, bars follow their voice
+        () => setHearing(true),                  // someone is talking: the bars follow their voice (silent)
       );
       audio.onSounding = (on) => voice.setSpeaking(on);
       voiceRef.current = voice;
@@ -376,6 +442,8 @@ export default function WalkMode() {
       gpsNews.current = [];
       getVoice().stop();
       speechId.current++;                        // cancel any alert still on its way
+      speaking.current = false;
+      speechPri.current = NOTHING;
       audio.stop();
       setShown(null);
       setRecent([]);
@@ -393,12 +461,13 @@ export default function WalkMode() {
     const unlocking = audio.unlock();
     getVoice().start(lang);                      // mic permission prompt on first use
     walk.start();                                // runs until Stop, don't await; camera prompt on first use
-    if (!MOCK) startMapping();                   // location prompt on first use; fake results never go on the map
+    // Location prompt on first use; fake results never go on the map. Off: no GPS at all.
+    if (!MOCK && locationMode !== "off") startMapping();
     if (autoAlerts) void startFast(++fastGen.current);
     quietSince.current = Date.now();
     lastIdleAt.current = 0;
     lastIdleLine.current = "";
-    log("info", `started (${lang}${MOCK ? ", MOCK" : ""})`);
+    log("info", `started (${lang}, location ${locationMode}${MOCK ? ", MOCK" : ""})`);
     setWalking(true);
     setStatus("walking");
     audio.setVoice(voice);
@@ -435,7 +504,7 @@ export default function WalkMode() {
   /** After the start clip: what the city and other walkers reported within 300 m (Gemini, from real data). */
   async function sayBriefing() {
     const r = reporter.current;
-    if (!r) return;
+    if (!r || locationRef.current !== "full") return; // a Gemini call and a long sentence: full mode only
     for (let i = 0; i < 16 && !r.position(); i++) await new Promise((ok) => setTimeout(ok, 500)); // GPS: up to 8 s
     const here = r.position();
     if (!here || reporter.current !== r) return;
@@ -449,8 +518,19 @@ export default function WalkMode() {
   /** Tap and "SeeWalk, what's ahead / what's blocking my path?" share this look, so they can't disagree
    *  with a street alert from the same photo. */
   async function answerFromScene(kind: "whats_ahead" | "path") {
+    aheadBusyRef.current = true;
+    setAheadBusy(true);
+    const ready = () => { aheadBusyRef.current = false; setAheadBusy(false); };
+    try {
+      await answerFromSceneNow(kind, ready);
+    } finally {
+      ready();                                   // failed, stopped, or done: the button is back
+    }
+  }
+  async function answerFromSceneNow(kind: "whats_ahead" | "path", ready: () => void) {
     await answeringQuestion(async () => {
       const answer = await walk.takeLook();      // the photo started when speech began, or a new one now
+      ready();                                   // the look is back: the button returns as the answer plays
       if (!answer.ok) {
         if (answer.reason === "stopped") return;
         setShown({ text: strings[lang][answer.reason === "no_connection" ? "noConn" : "blocked"], level: "system" });
@@ -515,7 +595,7 @@ export default function WalkMode() {
   }
 
   async function whatsAhead() {
-    if (!walking) return;
+    if (!walking || aheadBusyRef.current) return; // a second tap while looking would ask twice
     log("ask", "What's ahead? (tap)");
     await answerFromScene("whats_ahead");
   }
@@ -523,6 +603,7 @@ export default function WalkMode() {
   async function onVoice(c: ListenResult) {
     if (!walking) return;
     log("ask", `voice: ${c.intent}`);
+    audio.playDone();                            // confirmed: "I heard you" chime, then the answer
     if (c.intent === "where") {
       walk.dropLook();                           // the last 30 seconds already have it; no second photo
       const text = memory.current.where(c.heard, lang);
@@ -533,6 +614,10 @@ export default function WalkMode() {
       // "Where's the nearest pothole?" / "what's around me?": the map read aloud, from the walker's
       // GPS position and direction of travel (a fresh reading if the walk hasn't one yet)
       walk.dropLook();
+      if (locationRef.current === "off") {       // location assistance is off: no GPS reading
+        await answeringQuestion(async () => { await sayAnswer(t.locationIsOff, "around"); });
+        return;
+      }
       const la = places.current;
       await answeringQuestion(async () => {
         const text = await askNearby(lang, asksPotholes(c.heard), la?.position() ?? null, la?.direction() ?? null);
@@ -558,6 +643,13 @@ export default function WalkMode() {
     });
   }
   useLayoutEffect(() => { onVoiceRef.current = onVoice; });
+
+  function cycleLocationMode() {
+    const next = LOCATION_MODES[(LOCATION_MODES.indexOf(locationMode) + 1) % LOCATION_MODES.length];
+    setLocationMode(next);
+    saveLocationMode(next);
+    log("info", `location ${next}`);
+  }
 
   function toggleAutoAlerts() {
     const next = !autoAlerts;
@@ -658,6 +750,17 @@ export default function WalkMode() {
               {autoAlerts ? t.autoOn : t.autoOff}
             </button>
           </div>
+          <div className="setting">
+            <span id="loc-label">{t.locationLabel}</span>
+            {/* Tap to cycle: Off → Important only → All. VoiceOver reads the label, then the setting */}
+            <button
+              className={`auto${locationMode !== "off" ? " on" : ""}`}
+              onClick={cycleLocationMode}
+              aria-describedby="loc-label"
+            >
+              {locationMode === "off" ? t.locOff : locationMode === "important" ? t.locImportant : t.locFull}
+            </button>
+          </div>
         </div>
       )}
 
@@ -676,7 +779,14 @@ export default function WalkMode() {
 
       {walking ? (
         <div className="controls">
-          <button className="ahead" onClick={whatsAhead}>{t.ahead}</button>
+          <button
+            className={`ahead${aheadBusy ? " busy" : ""}`}
+            onClick={whatsAhead}
+            aria-disabled={aheadBusy}
+            aria-busy={aheadBusy}
+          >
+            {aheadBusy ? <><span className="spinner" aria-hidden="true" />{t.analyzing}</> : t.ahead}
+          </button>
           <button className="stop" onClick={toggle}>{t.stop}</button>
         </div>
       ) : (

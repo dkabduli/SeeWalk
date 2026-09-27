@@ -12,8 +12,15 @@ const TARGET_RATE = 16000;   // what we send: 16 kHz mono WAV (~32 KB per second
 const PRE_ROLL_S = 0.4;      // keep a little audio from before the speech started ("See…")
 const MAX_CLIP_S = 4;        // longest clip we send
 const END_SILENCE_S = 0.7;   // this much quiet ends a clip
-const MIN_SPEECH_S = 0.35;   // shorter bursts (a cough, a door) are ignored
-const WAKE_ACK_S = 0.55;     // this much speech → the "I heard the name" chime, then they finish
+// Shorter bursts (a cough, a door, "yeah") are ignored. The name alone ("VisionCompanion") is ~0.8 s,
+// so anything under 0.6 s of voice can't be a command and isn't worth a Gemini call.
+const MIN_SPEECH_S = 0.6;
+const WAKE_ACK_S = 0.55;     // this much voice → "someone is talking" (the on-screen bars)
+// Voice-like sound: loud AND a zero-crossing rate in the range of speech. Hiss (wind, traffic,
+// rain) crosses zero far more often; engine and road rumble far less. Only voiced blocks count
+// toward MIN_SPEECH_S, so background noise alone never becomes a clip.
+const VOICE_MIN_CROSSINGS_PER_S = 150;
+const VOICE_MAX_CROSSINGS_PER_S = 6000;
 
 /** Splits a live mic signal into speech clips using its loudness (voice activity detection).
  *  Pure logic, so it's unit-tested without a microphone. */
@@ -23,7 +30,7 @@ export class SpeechClipper {
   private preLen = 0;
   private rec: Float32Array[] | null = null;
   private recLen = 0;
-  private loudLen = 0;
+  private loudLen = 0;   // voiced samples in the clip so far
   private quietLen = 0;
   private acked = false;
   private readonly rate: number;
@@ -47,11 +54,20 @@ export class SpeechClipper {
     this.acked = false;
   }
 
+  /** Seconds of voice in the clip that was just emitted (for the caller's own decisions). */
+  lastVoiceSeconds = 0;
+
   push(buf: Float32Array) {
     let sum = 0;
-    for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+    let crossings = 0;
+    for (let i = 0; i < buf.length; i++) {
+      sum += buf[i] * buf[i];
+      if (i > 0 && (buf[i] >= 0) !== (buf[i - 1] >= 0)) crossings++;
+    }
     const rms = Math.sqrt(sum / buf.length);
     const loud = rms > Math.max(this.floor * 3, 0.01);
+    const perSecond = (crossings * this.rate) / buf.length;
+    const voiced = loud && perSecond >= VOICE_MIN_CROSSINGS_PER_S && perSecond <= VOICE_MAX_CROSSINGS_PER_S;
 
     if (!this.rec) {
       if (!loud) this.floor = this.floor * 0.95 + rms * 0.05;
@@ -65,7 +81,7 @@ export class SpeechClipper {
         this.recLen = this.preLen;
         this.pre = [];
         this.preLen = 0;
-        this.loudLen = buf.length;
+        this.loudLen = voiced ? buf.length : 0;
         this.quietLen = 0;
       }
       return;
@@ -74,7 +90,7 @@ export class SpeechClipper {
     this.rec.push(buf);
     this.recLen += buf.length;
     if (loud) {
-      this.loudLen += buf.length;
+      if (voiced) this.loudLen += buf.length;
       this.quietLen = 0;
       if (!this.acked && this.loudLen >= WAKE_ACK_S * this.rate) {
         this.acked = true;
@@ -85,6 +101,7 @@ export class SpeechClipper {
     }
     if (this.quietLen >= END_SILENCE_S * this.rate || this.recLen >= MAX_CLIP_S * this.rate) {
       const enough = this.loudLen >= MIN_SPEECH_S * this.rate;
+      this.lastVoiceSeconds = this.loudLen / this.rate;
       const clip = concat(this.rec, this.recLen);
       this.rec = null;
       this.recLen = 0;
@@ -154,14 +171,15 @@ interface Session { active: boolean; stop: () => void }
 /** onCommand: called with the recognised command (intent !== "none").
  *  onDebug (optional): reports what was heard, errors and state, for testing on the phone.
  *  getFrame (optional): the current camera frame (base64 JPEG), sent with each clip.
- *  onChecking (optional): true each time a clip goes to the server, false once none is being checked.
+ *  onChecking (optional): true each time a clip goes to the server (with its seconds of voice), false
+ *  once none is being checked. Nothing is confirmed yet: it may be background talk.
  *  onNoCommand (optional): the clip was speech, but not a command.
  *  onWake (optional): speech has lasted long enough to be the name; the rest of the question follows. */
 export function createVoiceCommand(
   onCommand: (command: ListenResult) => void,
   onDebug?: (msg: string) => void,
   getFrame?: () => string | null,
-  onChecking?: (checking: boolean) => void,
+  onChecking?: (checking: boolean, voiceSeconds?: number) => void,
   onNoCommand?: () => void,
   onWake?: () => void,
 ) {
@@ -252,7 +270,7 @@ export function createVoiceCommand(
     const clipper = new SpeechClipper(ctx.sampleRate, (clip) => {
       if (checking >= MAX_CHECKING) { onDebug?.("speech ignored (two already being checked)"); return; }
       checking += 1;
-      onChecking?.(true);
+      onChecking?.(true, clipper.lastVoiceSeconds);
       const seconds = (clip.length / ctx.sampleRate).toFixed(1);
       onDebug?.(`speech ${seconds} s → checking`);
       listen(toBase64(encodeWav(downsample(clip, ctx.sampleRate), TARGET_RATE)), lang, getFrame?.() ?? null)

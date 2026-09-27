@@ -31,8 +31,13 @@ const GROUND: ReadonlySet<Hazard["type"]> = new Set<Hazard["type"]>([
   "pothole", "uneven_surface", "curb_or_dropoff", "construction", "head_height_obstacle",
 ]);
 const GROUND_REPEAT_MS = 30_000;
+// Potholes come in clusters: a second one 10 m on is worth hearing sooner than 30 s later.
+const POTHOLE_REPEAT_MS = 12_000;
+// People in the corridor: one "Person ahead" covers everyone for this long (a busy sidewalk would
+// otherwise never stop), plus the one close-up warning. Off to the side or far away: never.
+const PERSON_REPEAT_MS = 15_000;
 // Direction change is the same object: a sign, the same stairs, one doorway, one row of columns, one curb.
-const BY_TYPE: ReadonlySet<Hazard["type"]> = new Set<Hazard["type"]>([...INFO, ...PASSAGES, ...STAIRS, ...GROUND, "pillar"]);
+const BY_TYPE: ReadonlySet<Hazard["type"]> = new Set<Hazard["type"]>([...INFO, ...PASSAGES, ...STAIRS, ...GROUND, "pillar", "person"]);
 const NOT_SCENE: ReadonlySet<Hazard["type"]> = new Set<Hazard["type"]>(["person", "bike", "car"]);
 const FILLER = new Set(["ahead", "left", "right", "your", "on", "devant", "gauche", "droite"]);
 const lastSpoken = new Map<string, { at: number; closeSaid: boolean }>();
@@ -41,19 +46,40 @@ let pillarLooks = 0;
 let pillarLookAt = -1;
 const repeatKey = (h: Hazard) => (BY_TYPE.has(h.type) ? h.type : `${h.type}:${h.direction}`);
 const repeatAfter = (h: Hazard) =>
-  GROUND.has(h.type) ? GROUND_REPEAT_MS : SLOW.has(h.type) ? SLOW_REPEAT_MS : REPEAT_MS[h.urgency];
+  h.type === "pothole" ? POTHOLE_REPEAT_MS
+    : h.type === "person" ? PERSON_REPEAT_MS
+    : GROUND.has(h.type) ? GROUND_REPEAT_MS : SLOW.has(h.type) ? SLOW_REPEAT_MS : REPEAT_MS[h.urgency];
 
 /** Street alerts: what's announced without being asked. A wide pillar in the corridor is included.
  *  A chair or a thin pole is not: those are spoken only when the walker asks.
- *  A door speaks only when it is straight ahead. Side doors stay for "what's ahead". */
+ *  A door speaks only when it is straight ahead. Side doors stay for "what's ahead".
+ *  A person only when in the corridor and within ~6 m; a bike or car only when coming at the walker. */
 export const STREET_TYPES: ReadonlySet<Hazard["type"]> = new Set<Hazard["type"]>([
   "pothole", "uneven_surface", "curb_or_dropoff", "stairs_down", "steps_up", "construction",
   "head_height_obstacle", "door", "door_open", "door_opening", "elevator", "pillar", "stop_sign", "crosswalk", "traffic_light",
+  "person", "bike", "car",
 ]);
+const MOVERS: ReadonlySet<Hazard["type"]> = new Set<Hazard["type"]>(["bike", "car"]);
 export const streetOnly = (r: SceneResult): SceneResult => ({
   ...r,
-  hazards: r.hazards.filter((h) => STREET_TYPES.has(h.type) && (!PASSAGES.has(h.type) || h.direction === "ahead") && (h.type !== "pillar" || h.direction === "ahead")),
+  hazards: r.hazards.filter((h) =>
+    STREET_TYPES.has(h.type) &&
+    (!PASSAGES.has(h.type) || h.direction === "ahead") &&
+    (h.type !== "pillar" || h.direction === "ahead") &&
+    (h.type !== "person" || h.distance !== "far") &&
+    (!MOVERS.has(h.type) || (h.approaching && h.distance !== "far"))),
 });
+
+/** Speech priority, most important first. A message only interrupts one that is less important.
+ *  0: immediate danger (under 2 m, moving at the walker). 1: obstacles, surface problems, a person in
+ *  the path, a stop sign. 2: other information (crosswalk, traffic light). 3: map and scene lines. */
+export type Priority = 0 | 1 | 2 | 3;
+export const LOW_PRIORITY: Priority = 3;
+export function alertPriority(h: Hazard): Priority {
+  if (h.urgency === 1) return 0;
+  if (h.urgency === 2 || h.type === "stop_sign" || h.type === "person") return 1;
+  return 2;
+}
 
 let passageHeld = false;
 let passageGoneAt = -1;
@@ -237,8 +263,10 @@ export function pickAlert(result: SceneResult, { ignoreRepeat = false } = {}): H
   return pick;
 }
 
-/** The instant street clip for this hazard and direction ("Stop sign on your right"), if there is one. */
-export const streetClip = (h: Hazard): string | null => (STREET_TYPES.has(h.type) ? `st_${h.type}_${h.direction}` : null);
+/** The instant street clip for this hazard and direction ("Stop sign on your right"), if there is one.
+ *  People, bikes and cars use the older clips ("Person on your left"). */
+export const streetClip = (h: Hazard): string | null =>
+  !STREET_TYPES.has(h.type) ? null : NOT_SCENE.has(h.type) ? `${h.type}_${h.direction}` : `st_${h.type}_${h.direction}`;
 
 /** Bundled clip to use if live speech fails. */
 export function fallbackClip(h: Hazard): string | null {

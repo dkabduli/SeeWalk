@@ -57,6 +57,45 @@ describe("SpeechClipper", () => {
     expect(wakes).toEqual([0]);
   });
 
+  it("loud hiss (wind, traffic, rain) never becomes a clip", () => {
+    const clips: Float32Array[] = [];
+    const c = new SpeechClipper(RATE, (clip) => clips.push(clip));
+    const hiss = () => new Float32Array(BLOCK).map(() => (Math.random() - 0.5) * 0.6);
+    for (let i = 0; i < blocks(1); i++) c.push(quiet());
+    for (let i = 0; i < blocks(3); i++) c.push(hiss());
+    for (let i = 0; i < blocks(1); i++) c.push(quiet());
+    expect(clips).toHaveLength(0);
+  });
+
+  it("loud low rumble (an engine, a bus) never becomes a clip", () => {
+    const clips: Float32Array[] = [];
+    const c = new SpeechClipper(RATE, (clip) => clips.push(clip));
+    let n = 0;
+    const rumble = () => new Float32Array(BLOCK).map(() => 0.4 * Math.sin((2 * Math.PI * 40 * n++) / RATE)); // 40 Hz
+    for (let i = 0; i < blocks(1); i++) c.push(quiet());
+    for (let i = 0; i < blocks(3); i++) c.push(rumble());
+    for (let i = 0; i < blocks(1); i++) c.push(quiet());
+    expect(clips).toHaveLength(0);
+  });
+
+  it("half a second of talk ('yeah', 'okay') is too short to be a command", () => {
+    const clips: Float32Array[] = [];
+    const c = new SpeechClipper(RATE, (clip) => clips.push(clip));
+    for (let i = 0; i < blocks(1); i++) c.push(quiet());
+    for (let i = 0; i < blocks(0.45); i++) c.push(speech());
+    for (let i = 0; i < blocks(1); i++) c.push(quiet());
+    expect(clips).toHaveLength(0);
+  });
+
+  it("reports how much voice the last clip had", () => {
+    const c = new SpeechClipper(RATE, () => {});
+    for (let i = 0; i < blocks(0.5); i++) c.push(quiet());
+    for (let i = 0; i < blocks(1.5); i++) c.push(speech());
+    for (let i = 0; i < blocks(1); i++) c.push(quiet());
+    expect(c.lastVoiceSeconds).toBeGreaterThan(1.3);
+    expect(c.lastVoiceSeconds).toBeLessThan(1.7);
+  });
+
   it("cuts long talking into clips of at most 4 s", () => {
     const clips: Float32Array[] = [];
     const c = new SpeechClipper(RATE, (clip) => clips.push(clip));

@@ -170,8 +170,9 @@ export class AudioEngine {
     return this.buffers.has(`${this.voice}/${lang}/${key}`);
   }
 
+  /** A voice is playing: a clip, live speech, or the phone's own voice. */
   get busy() {
-    return this.current !== null;
+    return this.current !== null || this.phoneVoice !== null;
   }
 
   stop() {
@@ -231,6 +232,9 @@ export class AudioEngine {
         const now = this.ctx!.currentTime;
         this.softNote(880, now, 120, 0.4);
         this.softNote(880, now + 0.16, 120, 0.34);
+        // The mic must not record the pulse as a new question (it used to feed back into /listen)
+        this.soundStarted();
+        setTimeout(() => this.soundEnded(), 340);
       };
       pulse();
       this.workingTimer = setInterval(pulse, 1600);
