@@ -16,11 +16,12 @@ Devpost deadline: **Sunday Sept 27, 2026, 10:00 AM EDT** (team target 9:30 AM). 
 ## At a glance
 
 ```mermaid
-flowchart LR
-    A["📷 Camera<br/><small>a snapshot every 0.8 s</small>"] -- photo --> B["Gemini<br/><small>sees the hazards</small>"]
-    B -- hazards --> C["VisionCompanion<br/><small>picks what matters</small>"]
-    C -- what to say --> D["ElevenLabs<br/><small>River's voice</small>"]
-    D -- voice --> E["🎧 Headphones<br/><small>walker hears it</small>"]
+%%{init: {"flowchart": {"htmlLabels": false, "padding": 18, "nodeSpacing": 24, "rankSpacing": 28}}}%%
+flowchart TB
+    A["Camera: a snapshot every 0.8 s"] -->|photo| B["Gemini: sees the hazards"]
+    B -->|hazards| C["VisionCompanion: picks what matters"]
+    C -->|what to say| D["ElevenLabs: River's voice"]
+    D -->|voice| E["Headphones: the walker hears it"]
 ```
 
 ### How the pieces talk (Gemini, ElevenLabs, Tiger Data)
