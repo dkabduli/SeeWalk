@@ -1,5 +1,6 @@
-# VisionCompanion
+![Vision Companion Banner](https://github.com/dkabduli/VisionCompanion/blob/main/web/public/VisionCompanion.png?raw=true)
 
+# VisionCompanion
 **A white cane finds the ground. VisionCompanion finds everything else.** Potholes, curbs, steps, doors, construction, stop signs and branches at head height are announced calmly, before the cane reaches them, and only when it matters. Anything else, you ask: *"VisionCompanion, what's ahead?"*
 
 VisionCompanion runs on an iPhone worn on a chest strap. It watches the path with the rear camera, uses **Gemini** to understand each snapshot, and speaks in an **ElevenLabs** voice (English or French) through open-ear headphones, so the walker still hears traffic.
