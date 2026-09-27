@@ -6,6 +6,11 @@ VisionCompanion runs on an iPhone worn on a chest strap. It watches the path wit
 
 > Built by team **Goobers** (Abdul, Aroha, Jibril, Siddig) for Hack the Hill III (uOttawa, Sept 25–27, 2026). Original product spec: [`SEEWALK_SPEC.md`](SEEWALK_SPEC.md) (the project's first name was SeeWalk). Where the two differ, **this README describes the app as built**.
 
+**Live app:** [https://visioncompanion.vercel.app](https://visioncompanion.vercel.app)  
+**Repository:** [https://github.com/dkabduli/VisionCompanion](https://github.com/dkabduli/VisionCompanion)
+
+Devpost deadline: **Sunday Sept 27, 2026, 10:00 AM EDT** (team target 9:30 AM). Judges read the commit history, so the work lives in this repo.
+
 ---
 
 ## At a glance
@@ -189,6 +194,65 @@ Alternatives we measured and rejected:
 | **Tiger Data** + **Leaflet** | Hazard map: reported hazards with GPS over time | `server/hazards.py`, `server/db.py`, `web/src/pages/HazardMap.tsx` (`?map`) | code built, **not connected** (no `DATABASE_URL`) |
 | **TensorFlow.js COCO-SSD** | On-device people/bikes/cars (~30 ms) | `web/src/detection/` | built, switched off (`PEOPLE_ALERTS`) |
 | **Vultr + Caddy** | Alternative hosting | `deploy/` | scripts only; we use Vercel |
+
+---
+
+## Hackathon record
+
+Hack the Hill III. The live phone link is [https://visioncompanion.vercel.app](https://visioncompanion.vercel.app). Camera and microphone on an iPhone only work over HTTPS, which is why the app is hosted rather than opened as a file.
+
+### Resources
+
+| Resource | What we use it for | Where we are |
+|---|---|---|
+| **Gemini API** (Google AI Studio, Interactions API, structured JSON) | Every snapshot, and every spoken question | **Live.** Walk photos: `gemini-3.5-flash-lite`, thinking `minimal`. Questions: `gemini-3.5-flash`, thinking `low`. Gemini 3.8 Flash was measured at 3.9–37.7 s and is not used |
+| **ElevenLabs** Multilingual v2 | Pre-recorded street alerts and system lines, 4 voices × English and French | **Live.** Clips in `web/public/audio/` |
+| **ElevenLabs** Flash v2.5 | Live answers (what's ahead, read this, holding, path) | **Live.** `server/tts.py` |
+| **FastAPI** (Python) | Holds the keys. `/analyze`, `/listen`, `/tts`, `/health` | **Live** on Vercel via [`api/index.py`](api/index.py), and on a laptop with uvicorn |
+| **Vercel** | Permanent HTTPS: the phone app plus the Python server. Firewall: 400 `/api` requests a minute per address | **Live.** [visioncompanion.vercel.app](https://visioncompanion.vercel.app). Redeploy: `vercel deploy --prod` |
+| **React, Vite, TypeScript** | The phone app, including Add to Home Screen | **Live.** `web/` |
+| **Web Audio API** | Left/right tones, clips, live voice, the listening and speaking bars | **Live.** `web/src/audio/` |
+| **iPhone Safari** | The demo phone. Own microphone capture, because Safari's speech recognition returns `service-not-allowed` | **Live** |
+| **Cloudflare Tunnel** (`cloudflared`) | HTTPS to a laptop while developing | **Used** as the backup. The public link is Vercel |
+| **GitHub** | The repo judges will open | **Live.** [dkabduli/VisionCompanion](https://github.com/dkabduli/VisionCompanion) |
+| **Wikimedia Commons** | Freely licensed street photos in [`samples/`](samples/), beside our own | **Used** by `server/scripts/eval_samples.py` |
+| **Leaflet** + **OpenStreetMap** | Hazard map at `?map` | **Built.** Pins need a database |
+| **Tiger Data** (PostgreSQL hypertables) | Store reported hazards with time and GPS | **Code written** (`server/hazards.py`, `server/db.py`). **Not connected:** no `DATABASE_URL` yet |
+| **TensorFlow.js COCO-SSD** | On-device people, bikes and cars | **Built, switched off** (`PEOPLE_ALERTS`). Those alerts flooded the walker in testing |
+| **Vultr** + **Caddy** | A virtual-machine host we scripted first | **Scripts only** (`deploy/`). The running app is on Vercel |
+| **GoDaddy Registry** | A lasting domain name for the live app | **Not set up yet.** Next, before submit |
+| **Auth0** | A login for an admin map | **Not used.** No login in this build |
+| **Presage, Solana** | — | **Not used.** No fit for a walking aid |
+
+### Checkpoints we have hit
+
+| Checkpoint | What is true now |
+|---|---|
+| Repo and history | Commits run through the weekend on `main`. First name was SeeWalk; the product name is VisionCompanion |
+| Phone over HTTPS | [visioncompanion.vercel.app](https://visioncompanion.vercel.app) opens in Safari. Share → Add to Home Screen runs it full screen |
+| Gemini loop | A snapshot every 0.8 s becomes structured hazards, then a spoken clip. About 2 s from hazard in view to heard |
+| Alert rules | Street hazards only. First sighting, one close warning for trip hazards, then quiet. Signs, doors, elevators and pillars do not repeat just because the direction changed |
+| Voice | "VisionCompanion", then the question. Rising chime, falling chime, answer. Wake word is checked in code, not only by the model |
+| English and French | Screen, clips, commands and answers. French mode translates an English slip and never says clear, safe, dégagé or libre |
+| Fail out loud | No connection, camera blocked, unclear, nothing detected. A dark street is still sent to Gemini. The flashlight comes on after three dark snapshots, where Safari allows it |
+| Questions that must be right | "What's ahead" and "where was…" use a stronger model or the last 30 seconds of memory. "Is it safe to cross?" is always a refusal |
+| Quiet places | After 10 seconds with no alert, one description of the place. The same place is not repeated |
+| Measured | Latency table above. Sample photos, including Wikimedia Commons, go through `eval_samples.py` |
+| Hazard map, in code | `POST /hazards`, hotspots, and the Leaflet page. Waiting on Tiger Data |
+
+### Checkpoints still ahead
+
+Sunday Sept 27. Feature freeze is **1:00 AM EDT** (bugs only after that). Submit by **10:00 AM EDT**, team target **9:30 AM**.
+
+| Still to do | Why it matters |
+|---|---|
+| **Demo video, about 2 minutes** | Script: [docs/demo-script.md](docs/demo-script.md). Shot list: [docs/shot-list.md](docs/shot-list.md). Film outside in daylight if Saturday's light is gone: Sunday 7–8 AM |
+| **Devpost** | Four names (Abdul, Aroha, Jibril, Siddig), the video, this GitHub repo, and [https://visioncompanion.vercel.app](https://visioncompanion.vercel.app) |
+| **GoDaddy domain** | Point a Registry domain at the Vercel app so the link has a real name. Prize target in the original spec: Best Domain Name |
+| **Tiger Data** | Put `DATABASE_URL` in Vercel and the map starts recording. The page and the API are already written. Prize target: Best Use of Tiger Data |
+| **Live demo at the table** | Read this, what am I holding, what's blocking my path, what's ahead, and the cross refusal. The video shows the walk; the table shows the questions |
+
+Prize targets from [`SEEWALK_SPEC.md`](SEEWALK_SPEC.md) that this build is aimed at: **Best Use of Gemini API**, **Best Use of ElevenLabs**, **Best UI/UX**. **Best Use of Tiger Data** and **Best Domain Name (GoDaddy)** are the two still open. Vultr was the first hosting plan; Vercel is what is actually serving the phone.
 
 ---
 
