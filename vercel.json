@@ -5,10 +5,13 @@
   "buildCommand": "cd web && npm run build",
   "outputDirectory": "web/dist",
   "functions": {
-    "api/index.py": { "includeFiles": "server/*.py", "maxDuration": 30 }
+    "api/index.py": { "includeFiles": "server/*.py", "maxDuration": 60 }
   },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index" },
     { "source": "/__lablog", "destination": "/api/index" }
+  ],
+  "crons": [
+    { "path": "/api/hazards/city/refresh", "schedule": "0 10 * * *" }
   ]
 }

@@ -12,6 +12,10 @@ export const RESEND_MS = 10_000;
 export interface HazardReporter {
   /** Feed every SceneResult from the walk loop (and the fast layer). Never throws, never waits. */
   report(result: SceneResult, source?: HazardReport["source"]): void;
+  /** Latest usable GPS fix (good enough to pin a hazard), or null. Shared with nearby alerts. */
+  position(): { lat: number; lon: number } | null;
+  /** Random per walk: the server leaves this walk's own sightings out of "reported nearby". */
+  readonly sessionId: string;
   stop(): void;
 }
 
@@ -38,18 +42,27 @@ export function startHazardReporter({
     { enableHighAccuracy: true, maximumAge: 5000, timeout: 20_000 },
   );
 
+  const usable = (t: number) =>
+    fix && fix.coords.accuracy <= MAX_ACCURACY_M && t - fix.timestamp <= MAX_FIX_AGE_MS ? fix : null;
+
   return {
+    sessionId,
+    position() {
+      const f = usable(now());
+      return f ? { lat: f.coords.latitude, lon: f.coords.longitude } : null;
+    },
     report(result, source = "gemini") {
       const t = now();
-      if (!fix || fix.coords.accuracy > MAX_ACCURACY_M || t - fix.timestamp > MAX_FIX_AGE_MS) return;
+      const here = usable(t);
+      if (!here) return;
       for (const h of result.hazards) {
         if (!isMapType(h.type) || h.confidence < REPORT_MIN_CONFIDENCE) continue;
         if (t - (lastSent.get(h.type) ?? -Infinity) < RESEND_MS) continue;
         lastSent.set(h.type, t);
         send({
           session_id: sessionId,
-          lat: fix.coords.latitude,
-          lon: fix.coords.longitude,
+          lat: here.coords.latitude,
+          lon: here.coords.longitude,
           type: h.type,
           confidence: h.confidence,
           source,

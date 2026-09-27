@@ -42,10 +42,14 @@ ROWS = [
     ("msg", "phone", "walker", "the answer, in River's voice", "out"),
     ("section", "3", "Once, ahead of time", False),
     ("msg", "eleven", "phone", "Multilingual v2 → 148 River clips + 110 each for Alice, Charlie, Moyo (EN + FR), bundled: alerts play instantly", "res"),
-    ("section", "4", "Hazard map: confident sidewalk hazards, saved with GPS and time (no photos)", False),
+    ("section", "4", "Hazard map: walkers' sightings + Ottawa 311 reports, spoken back to the walker", False),
     ("msg", "phone", "server", "POST /hazards · pothole, curb… ≥ 0.7 + GPS", "req"),
     ("msg", "server", "tiger", "hypertable row (deduped: 15 m, 5 min)", "req"),
-    ("msg", "tiger", "phone", "?map: pins + most-reported spots", "res"),
+    ("msg", "server", "tiger", "daily: open City of Ottawa 311 sidewalk reports", "req"),
+    ("msg", "tiger", "phone", "?map: walkers' pins + city reports + most-reported spots", "res"),
+    ("msg", "phone", "server", "GPS → /hazards/near, /hazards/briefing", "req"),
+    ("msg", "server", "gemini", "real reports within 300 m → 1–2 sentences", "req"),
+    ("msg", "phone", "walker", "“Reported nearby: broken curb” + area briefing", "out"),
 ]
 
 HEAD_Y, HEAD_H = 92, 66

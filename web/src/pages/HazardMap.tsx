@@ -3,18 +3,27 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "../styles/hazard-map.css";
 import {
-  fetchHazards, fetchHotspots, MAP_TYPES, saveReport, type Hotspot, type MapHazard, type MapType,
+  fetchBriefing, fetchCityReports, fetchHazards, fetchHotspots, MAP_TYPES, saveReport,
+  type CityReport, type Hotspot, type KnownType, type MapHazard,
 } from "../map/hazardsApi";
 
-/** Hazard map (…/?map): sidewalk problems SeeWalk walkers passed, from Tiger Data. */
+/** Hazard map (…/?map): sidewalk problems SeeWalk walkers passed, plus the City of Ottawa's open 311
+ *  reports (not fixed yet), all from Tiger Data. */
 
-const TYPE_INFO: Record<MapType, { label: string; color: string }> = {
+const TYPE_INFO: Record<KnownType, { label: string; color: string }> = {
   pothole:          { label: "Pothole",         color: "#d7263d" },
   uneven_surface:   { label: "Uneven pavement", color: "#f18f01" },
   obstacle_in_path: { label: "Obstacle",        color: "#7b2cbf" },
   construction:     { label: "Construction",    color: "#c99700" },
   curb_or_dropoff:  { label: "Curb / drop-off", color: "#1b6ec2" },
+  crossing_signal:  { label: "Crossing signal", color: "#0a8f7f" },
 };
+const KNOWN_TYPES = [...MAP_TYPES, "crossing_signal"] as const;
+/** City reports load for the visible area only, so not below this zoom (a whole city is too much). */
+const CITY_MIN_ZOOM = 13;
+
+const ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ESCAPES[c]);
 const RANGES = [{ days: 1, label: "Today" }, { days: 7, label: "7 days" }, { days: 30, label: "30 days" }];
 const HOME: L.LatLngTuple = [45.4231, -75.6831]; // uOttawa
 const REFRESH_MS = 15_000;
@@ -31,7 +40,12 @@ function ago(iso: string) {
 
 export default function HazardMap() {
   const [days, setDays] = useState(7);
-  const [hidden, setHidden] = useState<Set<MapType>>(new Set());
+  const [hidden, setHidden] = useState<Set<KnownType>>(new Set());
+  const [showWalkers, setShowWalkers] = useState(true);
+  const [showCity, setShowCity] = useState(true);
+  const [city, setCity] = useState<CityReport[]>([]);
+  const [cityNote, setCityNote] = useState("");
+  const [brief, setBrief] = useState("");
   const [hazards, setHazards] = useState<MapHazard[]>([]);
   const [hotspots, setHotspots] = useState<Hotspot[]>([]);
   const [status, setStatus] = useState<Status>("loading");
@@ -41,6 +55,8 @@ export default function HazardMap() {
   const mapEl = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const pins = useRef<L.LayerGroup | null>(null);
+  const cityPins = useRef<L.LayerGroup | null>(null);
+  const [view, setView] = useState(0); // bumps when the map stops moving
   const fitted = useRef(false);
 
   // The Leaflet map lives outside React: create it once.
@@ -51,7 +67,9 @@ export default function HazardMap() {
       maxZoom: 19,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     }).addTo(m);
+    cityPins.current = L.layerGroup().addTo(m); // under the walkers' pins
     pins.current = L.layerGroup().addTo(m);
+    m.on("moveend", () => setView((n) => n + 1));
     map.current = m;
     return () => { m.remove(); map.current = null; };
   }, []);
@@ -98,12 +116,57 @@ export default function HazardMap() {
     );
   }
 
-  const shown = useMemo(() => hazards.filter((h) => !hidden.has(h.type)), [hazards, hidden]);
+  // City 311 reports in the visible area (a little beyond it, so small pans don't reload)
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !showCity) return;
+    if (m.getZoom() < CITY_MIN_ZOOM) { setCity([]); setCityNote("Zoom in to see the city's reports."); return; }
+    const b = m.getBounds().pad(0.25);
+    const ctrl = new AbortController();
+    fetchCityReports({ south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() }, ctrl.signal)
+      .then((r) => { setCity(r); setCityNote(""); })
+      .catch((e: Error) => { if (!ctrl.signal.aborted) setCityNote(e.message === "map_off" ? "" : "Couldn't load the city's reports."); });
+    return () => ctrl.abort();
+  }, [view, showCity, reload]);
+
+  const shown = useMemo(() => (showWalkers ? hazards.filter((h) => !hidden.has(h.type)) : []), [hazards, hidden, showWalkers]);
+  const cityShown = useMemo(() => (showCity ? city.filter((r) => !hidden.has(r.type)) : []), [city, hidden, showCity]);
   const counts = useMemo(() => {
-    const c = Object.fromEntries(MAP_TYPES.map((t) => [t, 0])) as Record<MapType, number>;
-    for (const h of hazards) c[h.type]++;
+    const c = Object.fromEntries(KNOWN_TYPES.map((t) => [t, 0])) as Record<KnownType, number>;
+    if (showWalkers) for (const h of hazards) c[h.type]++;
+    if (showCity) for (const r of city) c[r.type]++;
     return c;
-  }, [hazards]);
+  }, [hazards, city, showWalkers, showCity]);
+
+  // City reports: hollow rings, so walkers' sightings (filled) stand out on top
+  useEffect(() => {
+    const layer = cityPins.current;
+    if (!layer) return;
+    layer.clearLayers();
+    for (const r of cityShown) {
+      const { label, color } = TYPE_INFO[r.type];
+      L.circleMarker([r.lat, r.lon], { radius: 7, color, weight: 3, fillColor: "#fff", fillOpacity: 0.85 })
+        .bindPopup(
+          `<b>${esc(label)}</b>: ${esc(r.label_en)}` +
+          (r.address ? `<br>${esc(r.address)}` : "") +
+          `<br><small>Ottawa 311, open${r.opened ? ` since ${esc(r.opened)}` : ""}` +
+          `${r.walkway ? "" : " · in the road: not a walk alert"}</small>`,
+        )
+        .addTo(layer);
+    }
+  }, [cityShown]);
+
+  async function briefHere() {
+    const c = map.current?.getCenter();
+    if (!c) return;
+    setBrief("Asking Gemini about the middle of the map…");
+    try {
+      const b = await fetchBriefing(c.lat, c.lng, "en");
+      setBrief(b.text + (b.by === "gemini" ? " (Gemini, from the reports)" : ""));
+    } catch (e) {
+      setBrief((e as Error).message === "map_off" ? "The server has no database." : "Couldn't reach the server.");
+    }
+  }
 
   // Redraw pins; zoom to them the first time there are any.
   useEffect(() => {
@@ -125,7 +188,7 @@ export default function HazardMap() {
     }
   }, [shown]);
 
-  const toggle = (t: MapType) =>
+  const toggle = (t: KnownType) =>
     setHidden((prev) => {
       const next = new Set(prev);
       if (!next.delete(t)) next.add(t);
@@ -136,7 +199,7 @@ export default function HazardMap() {
     status === "loading" ? "Loading hazards…" :
     status === "map_off" ? "Hazard map is off: the server has no DATABASE_URL." :
     status === "error" ? "Can't reach the server. Retrying…" :
-    hazards.length === 0 ? "No hazards reported in this period yet. Take a walk!" : null;
+    hazards.length === 0 && city.length === 0 ? "Nothing reported here in this period yet. Take a walk!" : null;
 
   return (
     <main className="hmap">
@@ -145,7 +208,8 @@ export default function HazardMap() {
       <header className="hmap-card hmap-top">
         <div className="hmap-title">
           <h1>Hazard map</h1>
-          <p>Sidewalk problems SeeWalk walkers passed · stored in Tiger Data</p>
+          <p>Sidewalk problems walkers passed + open City of Ottawa 311 reports · stored in Tiger Data</p>
+          <a className="hmap-back" href="./">← Walk</a>
         </div>
         <div className="hmap-range" role="group" aria-label="Time range">
           {RANGES.map((r) => (
@@ -154,8 +218,16 @@ export default function HazardMap() {
             </button>
           ))}
         </div>
+        <div className="hmap-legend" role="group" aria-label="Show sources">
+          <button aria-pressed={showWalkers} onClick={() => setShowWalkers((v) => !v)}>
+            <span className="dot solid" /> Walkers <span className="n">{hazards.length}</span>
+          </button>
+          <button aria-pressed={showCity} onClick={() => setShowCity((v) => !v)}>
+            <span className="dot ring" /> City 311 (open) <span className="n">{city.length}</span>
+          </button>
+        </div>
         <div className="hmap-legend" role="group" aria-label="Show hazard types">
-          {MAP_TYPES.map((t) => (
+          {KNOWN_TYPES.map((t) => (
             <button key={t} aria-pressed={!hidden.has(t)} onClick={() => toggle(t)}>
               <span className="dot" style={{ background: TYPE_INFO[t].color }} />
               {TYPE_INFO[t].label} <span className="n">{counts[t]}</span>
@@ -163,10 +235,15 @@ export default function HazardMap() {
           ))}
         </div>
         {message && <p className="hmap-msg" role="status">{message}</p>}
+        {showCity && cityNote && <p className="hmap-note" role="status">{cityNote}</p>}
         <div className="hmap-test">
           <button onClick={dropTestPin}>📍 Drop a test pin here</button>
           {pinNote && <span role="status">{pinNote}</span>}
         </div>
+        <div className="hmap-test">
+          <button onClick={briefHere}>🗣️ Area briefing</button>
+        </div>
+        {brief && <p className="hmap-brief" aria-live="polite">{brief}</p>}
       </header>
 
       {hotspots.length > 0 && (

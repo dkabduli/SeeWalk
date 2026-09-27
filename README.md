@@ -85,6 +85,25 @@ Regenerate after changing the flow: `python3 docs/img/make_how_it_works.py`.
 
 ---
 
+## Hazard map (Tiger Data)
+
+**Where it is:** tap **📍 Hazard map** on the start screen, or open [`/?map`](https://visioncompanion.vercel.app/?map) (French: the same link on the French start screen). **← Walk** goes back.
+
+**What goes on it**, all stored in **Tiger Data** (Tiger Cloud, PostgreSQL + TimescaleDB):
+
+| Source | What | How it gets there |
+|---|---|---|
+| **Walkers** (filled pins) | Potholes, uneven pavement, obstacles, construction, curbs Gemini saw with confidence ≥ 0.7, with GPS and time. No photos, no people. Deduped: the same walk, type and spot within 15 m and 5 min is saved once | The phone sends each one during the walk (`POST /hazards`), including hazards in photos taken for a question. Saved in the `hazard_reports` **hypertable** |
+| **City of Ottawa 311** (rings) | Reports the city **has not fixed yet**: potholes, lifted, sunken or broken sidewalk, broken curbs and high curb lips, branches over the sidewalk, and crossings whose walk signal, audible signal or push button is broken. About 1,500 across the city | [Ottawa's open 311 file](https://open.ottawa.ca/) (updated daily, Open Government Licence) → `server/city311.py` → the `city_reports` table. Daily by Vercel Cron, or `scripts/import_311.py` |
+
+**What the walker gets from it:**
+
+- **Area briefing.** A few seconds after Start (and with the **Area briefing** button on the map), Gemini turns the real reports within 300 m into one or two sentences. Sidewalk, curb and crossing problems come first, with street names: *"Heads up: two lifted sidewalk panels on Laurier, and the walk signal at King Edward is broken."* Gemini only rewords the list. If it adds safety talk or answers in the wrong language, a plain summary is said instead. It never says the area is clear.
+- **"Reported nearby".** During a walk, within 25 m of a known sidewalk problem (a city report, or another walker's sighting from the last 14 days), it says once, at low priority: *"Reported nearby: broken walk signal at the crossing."* GPS gives no facing, so it says "nearby", not left or right. Potholes out in the road stay on the map but are never walk alerts: beside a busy road they would come every few steps. Off in voice-only mode.
+- **The map page:** pins by type and source, the most-reported spots, a time range, and a test pin (your GPS, or the middle of the map when location is off).
+
+---
+
 ## How it works: the data flow
 
 **In plain English:** the phone shows a live camera feed, but nobody presses a shutter. Every **0.8 s** the app grabs **one still snapshot** and sends it to our server, with up to **two at Gemini at once**, so a fresh look arrives about every second even though each answer takes ~1.6–2 s. Gemini returns structured hazards (e.g. *pothole, ahead, near, 0.95 confidence, "Pothole ahead"*). The phone decides whether it's worth saying and plays a **pre-recorded ElevenLabs clip** for it instantly. Nothing is saved to the camera roll. A dark street still goes to Gemini. iOS is left to choose the frame rate, so the exposure can lengthen at night.
@@ -171,7 +190,13 @@ Alternatives we measured and rejected:
 | `POST` | `/analyze` | `{ image, prev_image?, lang: "en" \| "fr", careful? }` | `SceneResult`; `503` if Gemini fails or is slow. `careful` (questions) uses Gemini 3.5 Flash |
 | `POST` | `/listen` | `{ audio: <16 kHz WAV base64>, lang, image? }` | `{ heard, intent, answer, command }` |
 | `POST` | `/tts` | `{ text, lang, voice: "river" \| "alice" \| "charlie" \| "moyo" }` | `audio/mpeg` |
-| `POST` / `GET` | `/hazards`, `/hazards/hotspots` | hazard + GPS / — | hazard map (needs `DATABASE_URL`) |
+| `POST` / `GET` | `/hazards`, `/hazards/hotspots` | `{ session_id, lat, lon, type, confidence, source }` / `?days=` | `{ saved, reason }` / walkers' pins and most-reported spots |
+| `GET` | `/hazards/city` | `?south&west&north&east` (≤ 1° across) | open Ottawa 311 reports in that area |
+| `GET` | `/hazards/near` | `?lat&lon&radius≤100&session_id` | known sidewalk problems nearby, nearest first (city + other walkers) |
+| `POST` | `/hazards/briefing` | `{ lat, lon, lang }` | `{ text, count, by: "gemini" \| "plain" }` |
+| `GET` | `/hazards/city/refresh` | `Authorization: Bearer $CRON_SECRET` | re-imports Ottawa 311 (Vercel Cron, daily) |
+
+All `/hazards…` routes answer `503` until `DATABASE_URL` is set.
 | `GET` | `/health` | | `{ "ok": true }` |
 
 **Bundled clips:** every street alert in every direction, plus system messages and the intro, in each voice and language (`web/public/audio/`, keys in [`web/src/audio/clips.json`](web/src/audio/clips.json)). Regenerate with `server/scripts/generate_clips.py`.
@@ -192,7 +217,9 @@ Alternatives we measured and rejected:
 | **Web Audio API** | Panned tones, clips, live voice, waveform meters | `web/src/audio/` | ✅ |
 | **Vercel** | Hosting: the app + the Python server, a permanent HTTPS link, firewall rate limit | `vercel.json`, `api/index.py` | ✅ https://visioncompanion.vercel.app |
 | **cloudflared** | HTTPS tunnel to a laptop (the backup) | — | ✅ |
-| **Tiger Data** + **Leaflet** | Hazard map: reported hazards with GPS over time | `server/hazards.py`, `server/db.py`, `web/src/pages/HazardMap.tsx` (`?map`) | ✅ connected: Tiger Cloud hypertable, pins at `?map` |
+| **Tiger Data** + **Leaflet** | Hazard map: walkers' sightings (hypertable) + open Ottawa 311 reports | `server/hazards.py`, `server/db.py`, `server/city311.py`, `web/src/pages/HazardMap.tsx` (`?map`) | ✅ connected (production needs `DATABASE_URL` in Vercel) |
+| **Gemini** (text) | Area briefing from the nearby reports | `server/briefing.py` | ✅ |
+| **City of Ottawa open data** | 311 requests the city hasn't fixed: sidewalk, curb, crossing signal, pothole | `server/city311.py` | ✅ daily import |
 | **TensorFlow.js COCO-SSD** | On-device people/bikes/cars (~30 ms) | `web/src/detection/` | built, switched off (`PEOPLE_ALERTS`) |
 | **Vultr + Caddy** | Alternative hosting | `deploy/` | scripts only; we use Vercel |
 
@@ -217,8 +244,9 @@ Hack the Hill III. The live phone link is [https://visioncompanion.vercel.app](h
 | **Cloudflare Tunnel** (`cloudflared`) | HTTPS to a laptop while developing | **Used** as the backup. The public link is Vercel |
 | **GitHub** | The repo judges will open | **Live.** [dkabduli/VisionCompanion](https://github.com/dkabduli/VisionCompanion) |
 | **Wikimedia Commons** | Freely licensed street photos in [`samples/`](samples/), beside our own | **Used** by `server/scripts/eval_samples.py` |
-| **Leaflet** + **OpenStreetMap** | Hazard map at `?map` | **Built.** Pins need a database |
-| **Tiger Data** (PostgreSQL hypertables) | Store reported hazards with time and GPS | **Live.** Walks save confident potholes, curbs, construction and obstacles with GPS; `?map` shows pins and the most-reported spots |
+| **Leaflet** + **OpenStreetMap** | Hazard map at `?map` (link on the start screen) | **Live** |
+| **Tiger Data** (PostgreSQL hypertables) | Store reported hazards with time and GPS, and the city's open reports | **Live.** Walks save confident potholes, curbs, construction and obstacles with GPS; `?map` shows them with Ottawa's open 311 reports |
+| **City of Ottawa open data** (311, Open Government Licence) | Sidewalk problems the city hasn't fixed yet | **Live.** Imported daily; spoken as "Reported nearby" and in the area briefing |
 | **TensorFlow.js COCO-SSD** | On-device people, bikes and cars | **Built, switched off** (`PEOPLE_ALERTS`). Those alerts flooded the walker in testing |
 | **Vultr** + **Caddy** | A virtual-machine host we scripted first | **Scripts only** (`deploy/`). The running app is on Vercel |
 | **GoDaddy Registry** | A lasting domain name for the live app | **Not set up yet.** Next, before submit |
@@ -239,7 +267,7 @@ Hack the Hill III. The live phone link is [https://visioncompanion.vercel.app](h
 | Questions that must be right | "What's ahead" and "where was…" use a stronger model or the last 30 seconds of memory. "Is it safe to cross?" is always a refusal |
 | Quiet places | After 10 seconds with no alert, one description of the place. The same place is not repeated |
 | Measured | Latency table above. Sample photos, including Wikimedia Commons, go through `eval_samples.py` |
-| Hazard map, in code | `POST /hazards`, hotspots, and the Leaflet page. Waiting on Tiger Data |
+| Hazard map | Walks save hazards to Tiger Data; Ottawa's open 311 reports are imported; the walker hears an area briefing (Gemini) and "Reported nearby" alerts; `?map` is linked from the start screen |
 
 ### Checkpoints still ahead
 
@@ -249,10 +277,11 @@ Sunday Sept 27. Feature freeze is **1:00 AM EDT** (bugs only after that). Submit
 |---|---|
 | **Demo video, about 2 minutes** | Script: [docs/demo-script.md](docs/demo-script.md). Shot list: [docs/shot-list.md](docs/shot-list.md). Film outside in daylight if Saturday's light is gone: Sunday 7–8 AM |
 | **Devpost** | Four names (Abdul, Aroha, Jibril, Siddig), the video, this GitHub repo, and [https://visioncompanion.vercel.app](https://visioncompanion.vercel.app) |
+| **Hazard map on the live site** | Vercel → project → Settings → Environment Variables: add `DATABASE_URL` (Tiger Cloud connection string, Production) and `CRON_SECRET` (any long random string, for the daily 311 refresh), then `vercel deploy --prod`. Until then `/api/hazards/…` answers `503 … DATABASE_URL not set` |
 | **GoDaddy domain** | Point a Registry domain at the Vercel app so the link has a real name. Prize target in the original spec: Best Domain Name |
 | **Live demo at the table** | Read this, what am I holding, what's blocking my path, what's ahead, and the cross refusal. The video shows the walk; the table shows the questions |
 
-Prize targets from [`SEEWALK_SPEC.md`](SEEWALK_SPEC.md) that this build is aimed at: **Best Use of Gemini API**, **Best Use of ElevenLabs**, **Best UI/UX**. **Best Use of Tiger Data** and **Best Domain Name (GoDaddy)** are the two still open. Vultr was the first hosting plan; Vercel is what is actually serving the phone.
+Prize targets from [`SEEWALK_SPEC.md`](SEEWALK_SPEC.md) that this build is aimed at: **Best Use of Gemini API**, **Best Use of ElevenLabs**, **Best UI/UX**. plus **Best Use of Tiger Data** (the hazard map). **Best Domain Name (GoDaddy)** is still open. Vultr was the first hosting plan; Vercel is what is actually serving the phone.
 
 ---
 
@@ -310,10 +339,11 @@ Open the printed `https://….trycloudflare.com` link in Safari on the iPhone (S
 | `ELEVENLABS_API_KEY` | from ElevenLabs |
 | `ELEVENLABS_VOICE_ID` | `SAz9YHcvj6GT2YYXdXww` (River) |
 | `ELEVENLABS_TTS_MODEL` | `eleven_flash_v2_5` |
-| `DATABASE_URL` | Tiger Data connection string (hazard map). Also set it in Vercel → Settings → Environment Variables, then redeploy. First time only: `.venv/bin/python scripts/init_db.py` |
+| `DATABASE_URL` | Tiger Data connection string (hazard map). Also set it in Vercel → Settings → Environment Variables, then redeploy. First time only: `.venv/bin/python scripts/init_db.py`, then `.venv/bin/python scripts/import_311.py` for Ottawa's open reports |
+| `CRON_SECRET` | optional, Vercel only: any long random string. Turns on the daily Ottawa 311 refresh (Vercel sends it to `/api/hazards/city/refresh`) |
 | `ALLOWED_ORIGINS` | optional |
 
-**Tests:** `cd web && npm test` (phone app) · `cd server && .venv/bin/pytest` (server) · `server/.venv/bin/python server/scripts/eval_samples.py [fr]` runs [`samples/`](samples/) (our own street photos plus freely licensed ones from Wikimedia Commons) through Gemini. `server/.venv/bin/python server/scripts/smoke_hazards.py --base https://visioncompanion.vercel.app/api` saves a test pin in Tiger Data, checks the dedupe and confidence rules, reads it back from `/hazards` and `/hazards/hotspots`, then deletes it (`--base http://localhost:8000` for the laptop server).
+**Tests:** `cd web && npm test` (phone app) · `cd server && .venv/bin/pytest` (server) · `server/.venv/bin/python server/scripts/eval_samples.py [fr]` runs [`samples/`](samples/) (our own street photos plus freely licensed ones from Wikimedia Commons) through Gemini. `server/.venv/bin/python server/scripts/smoke_hazards.py --base https://visioncompanion.vercel.app/api` saves a test pin in Tiger Data, checks the dedupe and confidence rules, reads it back from `/hazards` and `/hazards/hotspots`, checks the Ottawa 311 layer, a "reported nearby" lookup and the area briefing, then deletes its pin (`--base http://localhost:8000` for the laptop server).
 
 ## Repo layout
 
@@ -325,7 +355,9 @@ Open the printed `https://….trycloudflare.com` link in Safari on the iPhone (S
 │   ├── lang_guard.py        # French mode never speaks English; never "clear" / "safe"
 │   ├── tts.py, voices.py    # ElevenLabs live voice, 4 voices
 │   ├── hazards.py, db.py    # hazard map (Tiger Data)
-│   └── scripts/             # check_connections, init_db, smoke_hazards, generate_clips, eval_samples, …
+│   ├── city311.py           # Ottawa open 311 reports → known hazards
+│   ├── briefing.py          # area briefing (Gemini, from the reports)
+│   └── scripts/             # check_connections, init_db, import_311, smoke_hazards, generate_clips, eval_samples, …
 ├── web/                     # React + Vite + TS phone app
 │   ├── public/              # bundled voice clips, icons, manifest
 │   └── src/
@@ -333,6 +365,7 @@ Open the printed `https://….trycloudflare.com` link in Safari on the iPhone (S
 │       ├── alerts/          # what to say and when (pickAlert), memory, idle
 │       ├── audio/           # AudioEngine, voices, live waveform
 │       ├── pages/           # WalkMode (the app), HazardMap (?map), CameraLab (?lab)
+│       ├── map/             # hazard reporter, "reported nearby" alerts, hazard map API
 │       └── i18n/            # EN / FR
 ├── samples/                 # street photos for testing Gemini
 └── docs/                    # diagram, 3D model, demo script, PRDs

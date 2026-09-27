@@ -17,4 +17,6 @@ ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "")
 ELEVENLABS_TTS_MODEL = os.getenv("ELEVENLABS_TTS_MODEL", "eleven_flash_v2_5")
 
 DATABASE_URL = os.getenv("DATABASE_URL", "")
+# Vercel Cron sends it as "Authorization: Bearer …" to refresh the Ottawa 311 data daily
+CRON_SECRET = os.getenv("CRON_SECRET", "")
 ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]

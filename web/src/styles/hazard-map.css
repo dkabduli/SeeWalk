@@ -66,3 +66,15 @@
   background: var(--teal); font-weight: 700; box-shadow: 0 3px 0 var(--ink);
 }
 .hmap-test button:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--ink); }
+
+.hmap-title { position: relative; padding-right: 84px; }
+.hmap-back {
+  position: absolute; top: 0; right: 0; min-height: 36px; display: inline-flex; align-items: center;
+  padding: 4px 12px; border: 1.5px solid var(--ink); border-radius: 999px; background: #fff;
+  color: var(--ink); font-weight: 700; font-size: 13px; text-decoration: none;
+}
+.hmap-back:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+.hmap .dot.solid { background: var(--ink); }
+.hmap .dot.ring { background: #fff; box-shadow: 0 0 0 3px var(--ink); }
+.hmap-note { margin: 0; color: var(--muted); font-size: 13px; }
+.hmap-brief { margin: 0; padding: 8px 10px; border-radius: 10px; background: #efece4; font-size: 14px; }

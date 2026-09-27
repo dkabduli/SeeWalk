@@ -10,9 +10,12 @@ from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 import psycopg
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
+import briefing
+import city311
+import config
 import db
 
 log = logging.getLogger("seewalk")
@@ -80,3 +83,61 @@ def get_hotspots(days: float = Query(7, gt=0, le=365), limit: int = Query(10, ge
     except psycopg.Error as e:
         log.warning("hotspots failed: %s", e)
         raise HTTPException(503, "Hazard map database unavailable")
+
+
+# ---------- Known hazards from open data (Ottawa 311) ----------
+
+@router.get("/hazards/city")
+def get_city_reports(south: float = Query(ge=-90, le=90), west: float = Query(ge=-180, le=180),
+                     north: float = Query(ge=-90, le=90), east: float = Query(ge=-180, le=180)):
+    """Open 311 reports in the visible map area."""
+    _require_db()
+    if north <= south or east <= west or north - south > 1 or east - west > 1:
+        raise HTTPException(422, "Zoom in: the area is at most 1 degree across")
+    try:
+        return {"reports": db.city_in_bbox(south=south, west=west, north=north, east=east)}
+    except psycopg.Error as e:
+        log.warning("city reports failed: %s", e)
+        raise HTTPException(503, "Hazard map database unavailable")
+
+
+@router.get("/hazards/near")
+def get_near(lat: float = Query(ge=-90, le=90), lon: float = Query(ge=-180, le=180),
+             radius: float = Query(60, gt=0, le=100), session_id: str = Query("", max_length=64)):
+    """Known hazards around the walker, nearest first: open city reports + other walkers' sightings."""
+    _require_db()
+    try:
+        return {"near": db.near(lat=lat, lon=lon, radius=radius, exclude_session=session_id or None, walkway_only=True)}
+    except psycopg.Error as e:
+        log.warning("near failed: %s", e)
+        raise HTTPException(503, "Hazard map database unavailable")
+
+
+class BriefingRequest(BaseModel):
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-180, le=180)
+    lang: Literal["en", "fr"] = "en"
+
+
+@router.post("/hazards/briefing")
+async def post_briefing(req: BriefingRequest):
+    """One or two spoken sentences about the reported problems within 300 m (Gemini, from real data)."""
+    _require_db()
+    try:
+        return await briefing.brief(req.lat, req.lon, req.lang)
+    except psycopg.Error as e:
+        log.warning("briefing failed: %s", e)
+        raise HTTPException(503, "Hazard map database unavailable")
+
+
+@router.get("/hazards/city/refresh")
+def refresh_city(authorization: str = Header("")):
+    """Daily Vercel Cron: re-import Ottawa's open 311 reports. Off unless CRON_SECRET is set."""
+    if not config.CRON_SECRET or authorization != f"Bearer {config.CRON_SECRET}":
+        raise HTTPException(401, "Not allowed")
+    _require_db()
+    try:
+        return city311.refresh()
+    except Exception as e:  # download, CSV format or database: report it, keep yesterday's data
+        log.warning("311 refresh failed: %s", e)
+        raise HTTPException(502, f"311 refresh failed: {type(e).__name__}")

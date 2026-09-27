@@ -55,6 +55,16 @@ def main() -> int:
             spots = http.get("/hazards/hotspots", params={"days": 1, "limit": 100}).json()["hotspots"]
             near = [s for s in spots if abs(s["lat"] - pin["lat"]) < 0.001 and abs(s["lon"] - pin["lon"]) < 0.001]
             check("pin is a hotspot", len(near) == 1, f"{len(spots)} hotspots")
+
+            # Open data: Ottawa 311 reports around downtown / uOttawa (scripts/import_311.py or the cron)
+            city = http.get("/hazards/city", params=dict(south=45.40, west=-75.72, north=45.44, east=-75.66)).json()["reports"]
+            check("Ottawa 311 reports on the map", len(city) > 0, f"{len(city)} open reports downtown")
+            sidewalk = next((c for c in city if c["walkway"]), None)
+            if sidewalk:
+                around = http.get("/hazards/near", params=dict(lat=sidewalk["lat"], lon=sidewalk["lon"], session_id=session)).json()["near"]
+                check("walk alert finds it nearby", any(n["id"] == sidewalk["id"] for n in around), sidewalk["label_en"])
+            r = http.post("/hazards/briefing", json={"lat": 45.4231, "lon": -75.6831, "lang": "en"})
+            check("area briefing", r.status_code == 200 and r.json().get("text"), f"({r.json().get('by')}) {r.json().get('text', '')[:90]}")
     except httpx.HTTPError as e:
         check("reach the server", False, f"{type(e).__name__}: {e}")
     finally:

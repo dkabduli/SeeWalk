@@ -13,6 +13,8 @@ import { useWalkLoop } from "../camera/useWalkLoop";
 import { createVoiceCommand } from "../camera/voiceCommand";
 import { sendToLaptop } from "../debug/laptopLog";
 import { startHazardReporter, type HazardReporter } from "../map/hazardReporter";
+import { fetchBriefing, type NearHazard } from "../map/hazardsApi";
+import { startNearbyAlerts } from "../map/nearbyAlerts";
 import { strings } from "../i18n/strings";
 import "../styles/walk.css";
 
@@ -151,6 +153,21 @@ export default function WalkMode() {
 
   // Hazard map (Tiger Data): confident, GPS-tagged sidewalk hazards. Fire and forget.
   const reporter = useRef<HazardReporter | null>(null);
+  // Known hazards (open Ottawa 311 reports, other walkers' sightings): "Reported nearby: …", once each
+  const nearby = useRef<{ stop(): void } | null>(null);
+  const sayNearbyRef = useRef<(h: NearHazard) => boolean>(() => false);
+
+  /** Low priority, like the idle lines: only in automatic mode and when nothing else is being said. */
+  const quietNow = () => autoAlertsRef.current && answering.current === 0 && !speaking.current && !audio.busy;
+
+  useLayoutEffect(() => {
+    sayNearbyRef.current = (h) => {
+      if (!quietNow()) return false;             // try again in 2 s
+      const phrase = lang === "fr" ? `Signalé à proximité : ${h.label_fr}` : `Reported nearby: ${h.label_en}`;
+      void speak({ type: "other", direction: "ahead", distance: "near", urgency: 3, confidence: 1, approaching: false, phrase });
+      return true;
+    };
+  });
 
   const onResult = useCallback((r: SceneResult) => {
     memory.current.remember(r);
@@ -312,6 +329,8 @@ export default function WalkMode() {
       walk.stop();
       reporter.current?.stop();
       reporter.current = null;
+      nearby.current?.stop();
+      nearby.current = null;
       getVoice().stop();
       speechId.current++;                        // cancel any alert still on its way
       audio.stop();
@@ -331,7 +350,7 @@ export default function WalkMode() {
     const unlocking = audio.unlock();
     getVoice().start(lang);                      // mic permission prompt on first use
     walk.start();                                // runs until Stop, don't await; camera prompt on first use
-    if (!MOCK) reporter.current = startHazardReporter(); // location prompt on first use; fake results never go on the map
+    if (!MOCK) startMapping();                   // location prompt on first use; fake results never go on the map
     if (autoAlerts) void startFast(++fastGen.current);
     quietSince.current = Date.now();
     lastIdleAt.current = 0;
@@ -351,6 +370,28 @@ export default function WalkMode() {
       log("say", "intro");
       await audio.playClip(lang, "intro");       // the voice commands, first Start only
     }
+    await sayBriefing();
+  }
+
+  /** GPS for the hazard map: report what Gemini sees, and say known hazards the walker gets close to. */
+  function startMapping() {
+    const r = startHazardReporter();
+    reporter.current = r;
+    nearby.current = startNearbyAlerts({ position: r.position, sessionId: r.sessionId, onNear: (h) => sayNearbyRef.current(h) });
+  }
+
+  /** After the start clip: what the city and other walkers reported within 300 m (Gemini, from real data). */
+  async function sayBriefing() {
+    const r = reporter.current;
+    if (!r) return;
+    for (let i = 0; i < 16 && !r.position(); i++) await new Promise((ok) => setTimeout(ok, 500)); // GPS: up to 8 s
+    const here = r.position();
+    if (!here || reporter.current !== r) return;
+    try {
+      const b = await fetchBriefing(here.lat, here.lon, lang, AbortSignal.timeout(6000));
+      if (reporter.current !== r || b.count === 0 || !quietNow()) return; // stopped, nothing reported, or busy
+      await sayAnswer(b.text, `briefing, ${b.by}`);
+    } catch { /* offline or map off: the walk doesn't need it */ }
   }
 
   /** Tap and "SeeWalk, what's ahead / what's blocking my path?" share this look, so they can't disagree
@@ -497,6 +538,7 @@ export default function WalkMode() {
             <li>{t.step2}</li>
             <li>{t.step3}</li>
           </ol>
+          <a className="map-link" href="?map">{t.mapLink}</a>
           <div className="phrases">
             <p className="say-then">{t.sayThen}</p>
             <ul>

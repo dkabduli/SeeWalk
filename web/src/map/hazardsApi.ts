@@ -1,4 +1,4 @@
-import type { HazardType } from "../api/types";
+import type { HazardType, Lang } from "../api/types";
 
 const BASE = "/api"; // same proxy as api/client.ts
 
@@ -67,3 +67,51 @@ export const fetchHazards = (days: number, signal?: AbortSignal) =>
 
 export const fetchHotspots = (days: number, signal?: AbortSignal) =>
   getJson<{ hotspots: Hotspot[] }>(`/hazards/hotspots?days=${days}&limit=5`, signal).then((d) => d.hotspots);
+
+// ---------- Known hazards from open data (Ottawa 311) and other walkers ----------
+
+/** Map types plus the city-only one: a crossing whose walk, audible or push-button signal is broken. */
+export type KnownType = MapType | "crossing_signal";
+
+export interface CityReport {
+  id: string;
+  source: string; // "ottawa_311"
+  type: KnownType;
+  label_en: string;
+  label_fr: string;
+  address: string | null;
+  lat: number;
+  lon: number;
+  opened: string | null;
+  /** false = out in the road (map and briefing only, never a walk alert) */
+  walkway: boolean;
+}
+
+/** A known hazard around the walker, nearest first ("walkers" = other walks' sightings). */
+export interface NearHazard extends CityReport {
+  metres: number;
+}
+
+export interface Bbox { south: number; west: number; north: number; east: number }
+
+export const fetchCityReports = (b: Bbox, signal?: AbortSignal) =>
+  getJson<{ reports: CityReport[] }>(
+    `/hazards/city?south=${b.south}&west=${b.west}&north=${b.north}&east=${b.east}`, signal,
+  ).then((d) => d.reports);
+
+export const fetchNear = (lat: number, lon: number, sessionId: string, radius = 60, signal?: AbortSignal) =>
+  getJson<{ near: NearHazard[] }>(
+    `/hazards/near?lat=${lat}&lon=${lon}&radius=${radius}&session_id=${encodeURIComponent(sessionId)}`, signal,
+  ).then((d) => d.near);
+
+/** One or two sentences about reported problems within 300 m, written by Gemini from real reports. */
+export async function fetchBriefing(lat: number, lon: number, lang: Lang, signal?: AbortSignal) {
+  const r = await fetch(`${BASE}/hazards/briefing`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ lat, lon, lang }),
+    signal,
+  });
+  if (!r.ok) throw new Error(r.status === 503 ? "map_off" : `briefing ${r.status}`);
+  return r.json() as Promise<{ text: string; count: number; by: "gemini" | "plain" }>;
+}
