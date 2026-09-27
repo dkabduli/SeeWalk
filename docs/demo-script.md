@@ -1,10 +1,10 @@
 # VisionCompanion demo script
 
 Two parts:
-- **Part A: the video (~2:00).** Filmed outside Saturday 4:30–6:45 PM (sunset ~7). It shows VisionCompanion finding stop signs, curbs, potholes and doors **on its own** while someone walks.
+- **Part A: the video (~2:00).** Filmed outside in daylight (Sunday 7–8 AM if Saturday's light is gone). It shows VisionCompanion finding stop signs, curbs, potholes and doors **on its own** while someone walks.
 - **Part B: the live demo (~3–4 min).** In person, at the table. The judges hear VisionCompanion **answer questions**: read this, what am I holding, what's blocking my path, what's ahead, and the safe-to-cross refusal.
 
-Everything below is what the app actually does today (`main`, commit `a0dcd8e` or later). Don't script lines it doesn't say.
+Everything below is what the app actually does today (`main`, Sunday build). Don't script lines it doesn't say.
 
 ---
 
@@ -17,19 +17,25 @@ Everything below is what the app actually does today (`main`, commit `a0dcd8e` o
 | Stop sign | "Stop sign ahead" / "…on your right" / "…on your left" | Once, when first seen (up to ~15 m / 50 ft). Not again for 45 s |
 | Crosswalk | "Crosswalk ahead" | Once, when first seen |
 | Traffic light | "Traffic light ahead" | Once. It **never** says the colour or "go" |
-| Curb / drop at the street | "Curb ahead" | When first seen (~10 m), **again when under 2 m** |
+| Curb / drop at the street | "Curb ahead" | When first seen (~10 m), **again when under 2 m**. Turning at the corner doesn't repeat it (30 s) |
 | Pothole / hole | "Pothole ahead" | When first seen, again when close |
 | Broken or lifted pavement | "Uneven ground ahead" | When first seen, again when close |
 | Steps up to an entrance | "Steps up ahead" | When first seen, again when close |
-| A door you're heading into | "Door ahead" | When first seen, again when close |
-| Cones / barriers / "sidewalk closed" | "Construction ahead" | When first seen, again when close |
+| A door you're heading into | "Door ahead" | Once, when it's straight ahead (not again while it's in front of you) |
+| Cones / barriers / "sidewalk closed" | "Construction ahead" | When first seen, again when close; once per work zone, whatever side it's on |
 | Branch or sign at head height | "Obstacle at head height ahead" | When first seen, again when close |
+| Indoors: elevator, pillar | "Elevator ahead", "Pillar ahead" | Once, when straight ahead |
 
 From the moment something comes into view, it takes **about 2 seconds** to speak.
 
+**On screen at the same time** (good for close-ups of the phone):
+- the phrase in big type with an arrow, and the **last two alerts faded** under it
+- the **edge of the camera view glows** on that side: red urgent, amber warning, white for signs
+- a pill over the camera with the voice's name (**River**) and bars that move with her actual voice
+
 **It does NOT announce on its own:** people, cars, bikes, chairs, benches, bins. That's on purpose: in testing, those announcements never stopped. Walkers ask for them instead ("VisionCompanion, what's blocking my path?").
 
-**When asked.** Say **"VisionCompanion"** first, then the question. You hear a soft chirp ("got it"), a gentle pulse while it thinks, and on screen a pill reading "Listening… / Thinking…" with a waveform. Then River answers:
+**When asked.** Say **"VisionCompanion"** first, then the question. A **rising chime** when it hears the name (the pill says **Listening…** and its bars follow *your* voice), a **falling chime** when you stop, **Thinking…** while it works (a soft pulse only if it takes over 3 s), then River answers and the pill shows **River** with her bars:
 
 | Say | Example answer |
 |---|---|
@@ -38,6 +44,7 @@ From the moment something comes into view, it takes **about 2 seconds** to speak
 | "VisionCompanion, what's blocking my path?" | "A chair and a bin ahead", or "Nothing detected in your path" (never "clear") |
 | "VisionCompanion, read this." | The text, word for word (up to ~25 words) |
 | "VisionCompanion, is it safe to cross?" | "I can't tell you when it's safe to cross. Listen for traffic and use your cane." |
+| "VisionCompanion, where was the elevator?" | From the last 30 s of the walk: "Elevator was on your left" |
 | (tap the **What's ahead?** button) | A short scene description |
 
 **It never stays silent about a problem:**
@@ -74,19 +81,19 @@ caffeinate -dimsu
 
 ## The demo iPhone (5 min)
 
-- [ ] Open the tunnel link in **Safari**. Allow the camera and microphone.
+- [ ] Open the tunnel link in **Safari**, then **Share → Add to Home Screen → Add**, and launch **Companion** from the home screen: it runs full screen, which looks like an app on camera. Allow the camera and microphone (the home-screen app asks again, separately from Safari). **Do this after the final tunnel start**: if the tunnel restarts, the link changes and the icon must be removed and added again.
 - [ ] Settings → Display & Brightness → **Auto-Lock: Never**
 - [ ] Ring/silent switch **off silent**, volume **high**
 - [ ] Shokz (or other open-ear headphones) paired and on
 - [ ] Control Center → **Screen Recording** on the demo phone. It records VisionCompanion's own audio for the edit. **Do one 10-second test recording first** and play it back to confirm River is audible with the Shokz connected. If she isn't, film with the Shokz disconnected so VisionCompanion plays from the phone speaker.
 - [ ] Chest mount: phone upright, rear camera forward, not tilted toward the ground or the sky
-- [ ] Setup screen shows **Street alerts: On**
+- [ ] Setup screen shows **Street alerts: On**, and the voice you want is picked (tap ▶ on a card to hear it first; tap the card to choose it). River is the default.
 - [ ] Tap **Start walk** once indoors to check. You should hear "Walk mode on" (or the intro, the very first time on this phone).
 
 ## Filming rules
 
 - **Walk at normal pace. Start ~10 m (30 ft) before the thing.** VisionCompanion needs ~2 s after it's in view. Starting too close makes it look slow.
-- **Retakes of the same stop sign:** VisionCompanion won't repeat a sign for 45 s. Between takes, either wait 45 s or **reload the page** (pull down in Safari) and tap Start again.
+- **Retakes of the same stop sign:** VisionCompanion won't repeat a sign for 45 s (a curb or work zone for 30 s). Between takes, either wait, or reload: in Safari pull down; in the home-screen app swipe it closed and reopen it. Then tap Start again.
 - **Real audio only, never dubbed.** Captions on every line (people watch muted).
 - **No fake blindfold "simulation" shots.** The walker uses a white cane naturally.
 - **At least 3 takes per scene.** Log the good ones in the take log at the bottom.
@@ -106,7 +113,7 @@ Crew: **Walker** (phone on chest, cane, Shokz) · **Camera** (second phone, 1080
 - **Setup:** a real stop sign on the walker's side of the street. Start **~10–15 m (30–50 ft) away**, walking toward it.
 - **Shot A:** wide from behind the walker, sign visible ahead.
 - **Shot B:** close on the demo phone's screen (for the edit).
-- **What happens:** a few steps in, a tone, then **"Stop sign on your right"** (or "ahead"). The screen shows the phrase with an arrow.
+- **What happens:** a few steps in, a tone, then **"Stop sign on your right"** (or "ahead"). The screen shows the phrase with an arrow, the right edge of the camera glows, and the **River** pill's bars move with her voice.
 - **Caption:** "Stop sign on your right": heard ~15 m before the corner.
 - **If it's silent:** check the phone is upright and the sign isn't hidden by a tree. Reload, then retake from farther back.
 
@@ -131,7 +138,7 @@ Crew: **Walker** (phone on chest, cane, Shokz) · **Camera** (second phone, 1080
 
 ### Scene 6: Door with steps (1:10–1:22)
 - **Setup:** a building entrance with steps up to the door (or just a door).
-- **What happens:** "Steps up ahead", then "Door ahead".
+- **What happens:** "Steps up ahead", then "Door ahead" (once the door is straight ahead).
 - **Caption:** "Steps, then a door."
 
 ### Scene 7: Construction (optional, 1:22–1:30)
@@ -145,7 +152,7 @@ Crew: **Walker** (phone on chest, cane, Shokz) · **Camera** (second phone, 1080
 
 ### Scene 9: How it works (1:40–1:52)
 - **Shot:** screen capture of `docs/signal-path-3d.html` and the README diagram.
-- **Voice-over (read by a teammate):** "Almost every second, the phone sends a snapshot to Gemini 3.5 Flash-Lite, which finds the hazards in about a second and a half. ElevenLabs' River voice says it, left or right, in the walker's ear."
+- **Voice-over (read by a teammate):** "Almost every second, the phone sends a snapshot to Gemini 3.5 Flash-Lite, which finds the hazards in about two seconds. ElevenLabs' River voice says it, left or right, in the walker's ear."
 
 ### Scene 10: Close (1:52–2:00)
 - **Shot:** team together.
@@ -170,62 +177,67 @@ Keep the reading/holding features **out of the video** except a teaser if there'
 - a water bottle, a mug, or something with a clear shape (for "what am I holding")
 - a chair or a bag to put in front of the camera (for "blocking my path")
 
-**Presenter** (holds the phone) + **Narrator** (talks to the judges).
+**Presenter** (holds the phone) + **Narrator** (talks to the judges). Open it from the **Companion** home-screen icon so it's full screen.
 
 ### 1. The pitch (30 s), Narrator
 > "Over 300 million people worldwide are blind or have serious vision loss. A white cane finds what's on the ground right in front of you, but not the stop sign 50 feet ahead, the pothole coming up, or the branch at head height. VisionCompanion is a phone on your chest and open-ear headphones: it watches the path and tells you, out loud, what the cane can't find. And you can ask it anything."
 
-### 2. Start (10 s)
+### 2. Pick a voice (15 s), shows off ElevenLabs
+- On the setup screen, tap **▶** on Alice, then Moyo: each plays "Stop sign on your right" in that voice, without switching. Tap River's card to keep River.
+- *Narrator:* "Four ElevenLabs voices, English and French. Every street alert is pre-recorded in each one, so alerts play instantly."
+
+### 3. Start (10 s)
 - Tap **Start walk**. It says "Walk mode on".
 - *Narrator:* "Street alerts are on: it's watching for hazards now. Everything else, you ask."
 
-### 3. Show the video clip of the stop sign (20 s), optional
+### 4. Show the video clip of the stop sign (20 s), optional
 - If the judges haven't seen the video, play Scene 2 on the laptop.
 
-### 4. "Read this" (30 s)
+### 5. "Read this" (30 s)
 - Hold the printed sign or menu ~40 cm in front of the camera.
 - *Presenter:* **"VisionCompanion, read this."**
-- Point out the chirp and the pulsing "Thinking…" indicator: *"That sound means it heard you: a blind user needs to know it's working."*
+- Point out the chimes and the pill: the bars follow the presenter's voice (**Listening…**), then **Thinking…**, then **River** as she reads. *"Those chimes mean it heard you: a blind user needs to know it's working."*
 - It reads the text word for word.
 
-### 5. "What am I holding?" (20 s)
+### 6. "What am I holding?" (20 s)
 - Hold the bottle in front of the chest camera.
 - **"VisionCompanion, what am I holding?"** → "A water bottle…"
 
-### 6. "What's blocking my path?" (20 s)
+### 7. "What's blocking my path?" (20 s)
 - Put the chair or bag in front of the phone.
 - **"VisionCompanion, what's blocking my path?"** → "A chair ahead"
 - Remove it, ask again → "Nothing detected in your path".
 - *Narrator:* "Notice it never says 'clear' or 'safe'. It only reports what it sees."
 
-### 7. "What's ahead?" (15 s)
+### 8. "What's ahead?" (15 s)
 - Point the phone at the room. **"VisionCompanion, what's ahead?"** → a short description of the room.
 - Or tap the **What's ahead?** button: same thing, no voice needed.
 
-### 8. The safety line (15 s)
+### 9. The safety line (15 s)
 - **"VisionCompanion, is it safe to cross?"** → "I can't tell you when it's safe to cross. Listen for traffic and use your cane."
 - *Narrator:* "No camera can promise that, so it will never say it."
 
-### 9. It fails out loud (20 s)
+### 10. It fails out loud (20 s)
 - Cover the lens with your hand → **"Camera blocked"**.
 - *Narrator:* "Silence never means all clear."
 
-### 10. Français (20 s), if time
-- Tap **Français**. **"VisionCompanion, lis ceci."** with the sign → it reads it and speaks French in the same voice.
+### 11. Français (20 s), if time
+- Tap **Français**. **"VisionCompanion, qu'y a-t-il devant ?"** → the answer in French, same voice. (**"…lis ceci."** reads a sign word for word, in whatever language the sign is in.)
+- *Narrator:* "In French mode it never slips into English, and it never says 'dégagé' or 'libre', the French for 'clear'."
 
-### 11. How it's built (30 s), Narrator
-> "The phone takes a snapshot every 0.8 seconds and sends it to Gemini 3.5 Flash-Lite, which returns the hazards as structured data in about a second and a half. The phone picks the one that matters and plays it in River's voice from ElevenLabs, panned to the left or right ear. Street alerts are pre-recorded so they play instantly; answers to questions use ElevenLabs Flash live. Voice commands are one Gemini call with the audio and the camera frame together."
+### 12. How it's built (30 s), Narrator
+> "The phone takes a snapshot every 0.8 seconds and sends it to Gemini 3.5 Flash-Lite, which returns the hazards as structured data in about two seconds. The phone picks the one that matters and plays it in River's voice from ElevenLabs, panned to the left or right ear. Street alerts are pre-recorded so they play instantly; answers to questions use ElevenLabs Flash live. Voice commands are one Gemini call with the audio and the camera frame together."
 
 ### If something goes wrong live
 | Problem | Do this |
 |---|---|
-| No answer after a question | Say it again, clearly, starting with "VisionCompanion". The chirp tells you it heard. |
+| No answer after a question | Say it again, clearly, starting with "VisionCompanion". The rising chime tells you it heard the name. |
 | "No connection" | Laptop Wi-Fi dropped: check the tunnel terminal. Switch to the phone hotspot, restart the tunnel, open the new link. |
 | Everything silent | Phone on silent, or volume down. Or the audio was interrupted (call/Siri): tap **Stop**, then **Start walk**. |
 | Wrong answer | Say so honestly: "It's a snapshot model, it can miss things. That's why it never says 'safe'." |
 
 ### Likely judge questions
-- **"Why not just a live video model?"** The live Gemini API we tested only answers with audio, and the full model took 4–38 s per image. Flash-Lite answers in ~1.5 s with structured data we can filter, so it only speaks when it matters.
+- **"Why not just a live video model?"** The live Gemini API we tested only answers with audio, and the full model took 4–38 s per image. Flash-Lite answers in ~1.6–2 s with structured data we can filter, so it only speaks when it matters.
 - **"Why not announce people and cars?"** We did. In testing it never stopped talking and drowned out what mattered. Walkers ask when they want it.
 - **"Latency?"** About 2 s from the moment something is in view to hearing it. That's why it reports signs ~15 m out and trip hazards ~10 m out, and repeats a trip hazard once more when it's close.
 - **"Privacy?"** We don't save the snapshots: each one is sent to Gemini to be analyzed and then discarded by our server.
