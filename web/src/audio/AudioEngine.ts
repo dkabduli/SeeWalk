@@ -82,6 +82,14 @@ export class AudioEngine {
     );
   }
 
+  /** Play one bundled clip in any voice, without switching the walk to that voice (the ▶ on a voice card). */
+  async previewClip(voice: VoiceId, lang: Lang, key: string) {
+    await this.unlock();
+    const res = await fetch(clipUrl(voice, lang, key));
+    if (!res.ok) return;
+    await this.playBuffer(await this.ctx!.decodeAudioData(await res.arrayBuffer()), 0);
+  }
+
   /** iOS suspends ("interrupts") the audio context after a call, Siri, or switching apps.
    *  Try to resume before every sound; if it stays suspended, the next tap resumes it. */
   private ensureRunning() {

@@ -114,6 +114,12 @@
   max-height: 7.8em; overflow-y: auto;
   -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
 }
+/* The last two alerts, faded, under the current one */
+.walk .alert .recent {
+  grid-column: 1 / -1; margin-top: -4px;
+  font-size: 14px; font-weight: 600; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .walk .alert.none .text { font-size: 18px; font-weight: 600; color: var(--muted); text-wrap: pretty; }
 .walk .alert.urgent  { border-left-color: var(--red); }
 .walk .alert.urgent .arrow { color: var(--red); }
@@ -166,25 +172,50 @@
 .walk .voices { display: grid; gap: 8px; padding-top: 14px; border-top: 1px solid var(--line); }
 .walk .voices p { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--muted); }
 .walk .voice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.walk .voice-grid button {
-  display: grid; gap: 1px; min-height: 52px; padding: 8px 12px; text-align: left;
+.walk .voice-card { position: relative; display: grid; }
+.walk .voice-card .pick {
+  display: grid; gap: 1px; min-height: 52px; padding: 8px 48px 8px 12px; text-align: left;
   border-radius: 10px; background: var(--panel); color: var(--text); border: 1px solid var(--line);
 }
-.walk .voice-grid button b { font-size: 16px; font-weight: 800; }
-.walk .voice-grid button small { font-size: 13px; font-weight: 600; color: var(--muted); }
-.walk .voice-grid button.on { color: var(--bg); background: var(--amber); border-color: var(--amber); }
-.walk .voice-grid button.on small { color: var(--bg); }
-.walk .voice-grid button:active { background: #dcdad4; }
-.walk .voice-grid button.on:active { background: var(--amber); }
+.walk .voice-card .pick b { font-size: 16px; font-weight: 800; }
+.walk .voice-card .pick small { font-size: 13px; font-weight: 600; color: var(--muted); }
+.walk .voice-card.on .pick { color: var(--bg); background: var(--amber); border-color: var(--amber); }
+.walk .voice-card.on .pick small { color: var(--bg); }
+.walk .voice-card .pick:active { background: #dcdad4; }
+.walk .voice-card.on .pick:active { background: var(--amber); }
+/* ▶ hear this voice, without choosing it. 36 px round, inside the card on the right. */
+.walk .voice-card .hear {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center;
+  background: rgb(255 255 255 / 0.08); color: var(--text); border: 1px solid var(--line);
+}
+.walk .voice-card .hear svg { width: 12px; height: 12px; margin-left: 2px; fill: currentColor; }
+.walk .voice-card.on .hear { background: rgb(15 17 19 / 0.14); color: var(--bg); border-color: rgb(15 17 19 / 0.25); }
+.walk .voice-card .hear:active { transform: translateY(-50%) scale(0.92); }
 
 /* Setup: the voice commands you can use */
 .walk .phrases { display: grid; gap: 8px; padding-top: 14px; border-top: 1px solid var(--line); }
 .walk .phrases p { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--muted); }
+.walk .phrases .say-then { font-size: 15px; font-weight: 700; letter-spacing: 0; text-transform: none; color: var(--text); }
 .walk .phrases ul { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 8px; }
 .walk .phrases li {
   padding: 7px 11px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line);
   font-size: 15px; font-weight: 600; color: var(--text);
 }
+
+/* Edge glow: the side of the camera the alert came from lights up in its colour, then fades.
+   Left / right edge for left / right, the top edge for ahead. */
+/* Information (signs, crosswalks) glows soft white: the panel's steel grey vanishes against a street */
+.walk .viewfinder .glow { position: absolute; inset: 0; pointer-events: none; --c: 244 242 237; }
+.walk .viewfinder .glow.urgent  { --c: 224 54 44; }
+.walk .viewfinder .glow.warning { --c: 243 178 27; }
+.walk .viewfinder .glow.left  { background: linear-gradient(to right,  rgb(var(--c) / 0.8), rgb(var(--c) / 0.28) 6%, rgb(var(--c) / 0) 32%); }
+.walk .viewfinder .glow.right { background: linear-gradient(to left,   rgb(var(--c) / 0.8), rgb(var(--c) / 0.28) 6%, rgb(var(--c) / 0) 32%); }
+.walk .viewfinder .glow.ahead { background: linear-gradient(to bottom, rgb(var(--c) / 0.8), rgb(var(--c) / 0.28) 5%, rgb(var(--c) / 0) 26%); }
+@media (prefers-reduced-motion: no-preference) {
+  .walk .viewfinder .glow { animation: walk-glow 1.6s ease-out forwards; }
+}
+@keyframes walk-glow { 0% { opacity: 0; } 10% { opacity: 1; } 100% { opacity: 0; } }
 
 /* Siri-style "working" indicator over the bottom of the camera */
 .walk .working {
