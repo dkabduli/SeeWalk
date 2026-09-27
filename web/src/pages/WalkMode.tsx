@@ -474,7 +474,9 @@ export default function WalkMode() {
           <button className="stop" onClick={toggle}>{t.stop}</button>
         </div>
       ) : (
-        <button className="start" onClick={toggle}>{t.start}</button>
+        <div className="start-bar">
+          <button className="start" onClick={toggle}>{t.start}</button>
+        </div>
       )}
     </main>
   );

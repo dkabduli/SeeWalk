@@ -1,5 +1,5 @@
 /* Walk Mode. Colours come from the white cane itself: near-black, white, and the red tip.
-   Flat, high contrast, readable in sunlight and on camera; no gradients, no decorative motion.
+   Flat, high contrast, readable in sunlight and on camera; no decorative gradients or motion.
    The screen covers the whole page (fixed), so the global page background doesn't show. */
 .walk {
   --bg: #0f1113;
@@ -15,7 +15,9 @@
   position: fixed; inset: 0; overflow-y: auto;
   -webkit-overflow-scrolling: touch; overscroll-behavior: contain; /* smooth, no rubber-banding the page behind */
   display: flex; flex-direction: column; gap: 12px;
-  padding: max(12px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom));
+  --pad-x: 14px;
+  --pad-bottom: max(14px, env(safe-area-inset-bottom));
+  padding: max(12px, env(safe-area-inset-top)) var(--pad-x) var(--pad-bottom);
   background: var(--bg); color: var(--text);
   font: 17px/1.35 -apple-system, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -121,11 +123,27 @@
 .walk .alert.system  { border-left-color: var(--red); background: #2a1715; }
 
 /* Controls. Walking: the big "What's ahead?" target fills the bottom of the screen. */
+/* Before Start the setup scrolls under a solid bar that holds the Start button. The bar runs edge
+   to edge and down past the home indicator, so nothing shows beside or below the button, and the
+   words fade out above it instead of being cut off. It sits in the flow, so at the end of the
+   scroll the last setting stops just above it. */
+.walk.is-idle { padding-bottom: 0; scroll-padding-bottom: 130px; }
+.walk.is-idle .setup { margin-bottom: 24px; }   /* at the end of the scroll the fade falls on empty space */
+.walk .start-bar {
+  position: sticky; bottom: 0; z-index: 1; flex: none;
+  margin: 0 calc(-1 * var(--pad-x));
+  padding: 6px var(--pad-x) var(--pad-bottom);
+  background: var(--bg);
+}
+.walk .start-bar::before {       /* the fade: text dissolves into the bar as it scrolls down */
+  content: ""; position: absolute; left: 0; right: 0; bottom: 100%; height: 36px;
+  background: linear-gradient(to bottom, rgb(15 17 19 / 0), var(--bg));
+  pointer-events: none;
+}
 .walk .start {
-  position: sticky; bottom: 0; flex: none;
+  display: block; width: 100%;
   min-height: 84px; border-radius: 16px; background: var(--white); color: var(--bg);
   font-size: 28px; font-weight: 800; letter-spacing: -0.2px;
-  box-shadow: 0 -14px 20px var(--bg);   /* fades the text scrolling under it */
 }
 .walk .controls { flex: none; display: grid; grid-template-columns: 1.35fr 1fr; gap: 10px; }
 .walk .ahead {
