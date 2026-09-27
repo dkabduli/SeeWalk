@@ -103,9 +103,13 @@
 .walk .alert .arrow { font-size: 52px; font-weight: 800; line-height: 1; text-align: center; }
 .walk .alert.no-arrow { grid-template-columns: 1fr; padding-left: 18px; }
 .walk .alert { flex: none; }
+/* One fixed height while walking, whatever it says (one line, two, the recent line, a long answer):
+   the camera above fills the rest, so if this panel grew and shrank the video looked like it was
+   zooming in and out with every alert. */
+.walk.is-walking .alert { height: 128px; min-height: 0; overflow: hidden; }
 .walk .alert .text {
   min-width: 0; overflow-wrap: anywhere; text-wrap: balance; /* grid children must be allowed to shrink */
-  font-size: clamp(26px, 7.4vw, 36px); font-weight: 800; line-height: 1.12; letter-spacing: -0.3px;
+  font-size: clamp(24px, 6.8vw, 32px); font-weight: 800; line-height: 1.12; letter-spacing: -0.3px;
 }
 .walk .alert.long { min-height: 0; padding-top: 10px; padding-bottom: 10px; }
 .walk .alert.long:not(.no-arrow) { grid-template-columns: 40px 1fr; }
@@ -205,9 +209,9 @@
 .walk .viewfinder .glow { position: absolute; inset: 0; pointer-events: none; --c: 244 242 237; }
 .walk .viewfinder .glow.urgent  { --c: 224 54 44; }
 .walk .viewfinder .glow.warning { --c: 243 178 27; }
-.walk .viewfinder .glow.left  { background: linear-gradient(to right,  rgb(var(--c) / 0.8), rgb(var(--c) / 0.28) 6%, rgb(var(--c) / 0) 32%); }
-.walk .viewfinder .glow.right { background: linear-gradient(to left,   rgb(var(--c) / 0.8), rgb(var(--c) / 0.28) 6%, rgb(var(--c) / 0) 32%); }
-.walk .viewfinder .glow.ahead { background: linear-gradient(to bottom, rgb(var(--c) / 0.8), rgb(var(--c) / 0.28) 5%, rgb(var(--c) / 0) 26%); }
+.walk .viewfinder .glow.left  { background: linear-gradient(to right,  rgb(var(--c) / 0.6), rgb(var(--c) / 0.2) 6%, rgb(var(--c) / 0) 30%); }
+.walk .viewfinder .glow.right { background: linear-gradient(to left,   rgb(var(--c) / 0.6), rgb(var(--c) / 0.2) 6%, rgb(var(--c) / 0) 30%); }
+.walk .viewfinder .glow.ahead { background: linear-gradient(to bottom, rgb(var(--c) / 0.6), rgb(var(--c) / 0.2) 5%, rgb(var(--c) / 0) 24%); }
 @media (prefers-reduced-motion: no-preference) {
   .walk .viewfinder .glow { animation: walk-glow 1.6s ease-out forwards; }
 }
