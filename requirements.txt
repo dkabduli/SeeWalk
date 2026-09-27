@@ -1,5 +1,7 @@
-# Vercel Python function (api/index.py): hazard map API only. The full server uses server/requirements.txt.
-fastapi
-pydantic
-psycopg[binary]
-python-dotenv
+# Vercel Python function (api/index.py): the whole server. Versions match server/.venv (tested).
+fastapi==0.141.1
+pydantic==2.13.5
+google-genai==2.25.0
+httpx==0.28.1
+psycopg[binary]==3.3.6
+python-dotenv==1.2.3

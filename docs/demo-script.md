@@ -53,9 +53,15 @@ From the moment something comes into view, it takes **about 2 seconds** to speak
 
 ---
 
-## Before you go out (laptop: Abdul, 15 min)
+## Where it runs
 
-VisionCompanion runs on the laptop. **The laptop stays on, awake, plugged in and online the whole time.**
+**https://visioncompanion.vercel.app** (hosted on Vercel). The link never changes, so the home-screen icon keeps working and the laptop can be closed. Nothing to start before filming.
+
+The very first request after it has been idle takes ~1–3 s longer (the server waking up); after that it's the same speed as the laptop. Open the app a minute before filming.
+
+## Backup: run it from the laptop (Abdul, 15 min)
+
+Only if Vercel has a problem. **The laptop then stays on, awake, plugged in and online the whole time.**
 
 1. Pull the latest `main` and build the app (the snapshot interval is baked in at build time):
 ```bash
@@ -81,7 +87,7 @@ caffeinate -dimsu
 
 ## The demo iPhone (5 min)
 
-- [ ] Open the tunnel link in **Safari**, then **Share → Add to Home Screen → Add**, and launch **Companion** from the home screen: it runs full screen, which looks like an app on camera. Allow the camera and microphone (the home-screen app asks again, separately from Safari). **Do this after the final tunnel start**: if the tunnel restarts, the link changes and the icon must be removed and added again.
+- [ ] Open **https://visioncompanion.vercel.app** in **Safari**, then **Share → Add to Home Screen → Add**, and launch **Companion** from the home screen: it runs full screen, which looks like an app on camera. Allow the camera and microphone (the home-screen app asks again, separately from Safari). (If you ever fall back to the laptop tunnel, its link changes on every restart and the icon must be added again.)
 - [ ] Settings → Display & Brightness → **Auto-Lock: Never**
 - [ ] Ring/silent switch **off silent**, volume **high**
 - [ ] Shokz (or other open-ear headphones) paired and on
@@ -172,7 +178,7 @@ Keep the reading/holding features **out of the video** except a teaser if there'
 
 # Part B: live demo for the judges (~3–4 min)
 
-**Setup at the table:** laptop running (the same 4 terminals), demo iPhone in the chest mount or held at chest height, **phone speaker on** (disconnect the Shokz so the judges hear it). Have these props:
+**Setup at the table:** the Vercel link (no laptop needed), demo iPhone in the chest mount or held at chest height, **phone speaker on** (disconnect the Shokz so the judges hear it). Have these props:
 - a printed sign or a menu with large text (for "read this")
 - a water bottle, a mug, or something with a clear shape (for "what am I holding")
 - a chair or a bag to put in front of the camera (for "blocking my path")
@@ -232,7 +238,7 @@ Keep the reading/holding features **out of the video** except a teaser if there'
 | Problem | Do this |
 |---|---|
 | No answer after a question | Say it again, clearly, starting with "VisionCompanion". The rising chime tells you it heard the name. |
-| "No connection" | Laptop Wi-Fi dropped: check the tunnel terminal. Switch to the phone hotspot, restart the tunnel, open the new link. |
+| "No connection" | The phone lost internet: check Wi-Fi / cellular. (On the laptop backup: check the tunnel terminal, or switch to the phone hotspot and restart the tunnel.) |
 | Everything silent | Phone on silent, or volume down. Or the audio was interrupted (call/Siri): tap **Stop**, then **Start walk**. |
 | Wrong answer | Say so honestly: "It's a snapshot model, it can miss things. That's why it never says 'safe'." |
 

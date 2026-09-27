@@ -176,10 +176,11 @@ Alternatives we measured and rejected:
 | **FastAPI** (Python 3.12) | Holds the keys; `/analyze`, `/listen`, `/tts` | `server/` | ✅ |
 | **React + Vite + TypeScript** | The phone app (PWA, home-screen icon) | `web/` | ✅ |
 | **Web Audio API** | Panned tones, clips, live voice, waveform meters | `web/src/audio/` | ✅ |
-| **cloudflared** | HTTPS tunnel so the iPhone can use the camera and mic | — | ✅ |
+| **Vercel** | Hosting: the app + the Python server, a permanent HTTPS link, firewall rate limit | `vercel.json`, `api/index.py` | ✅ https://visioncompanion.vercel.app |
+| **cloudflared** | HTTPS tunnel to a laptop (the backup) | — | ✅ |
 | **Tiger Data** + **Leaflet** | Hazard map: reported hazards with GPS over time | `server/hazards.py`, `server/db.py`, `web/src/pages/HazardMap.tsx` (`?map`) | code built, **not connected** (no `DATABASE_URL`) |
 | **TensorFlow.js COCO-SSD** | On-device people/bikes/cars (~30 ms) | `web/src/detection/` | built, switched off (`PEOPLE_ALERTS`) |
-| **Vultr + Caddy** | Hosting | `deploy/` | scripts only; the demo runs from the laptop |
+| **Vultr + Caddy** | Alternative hosting | `deploy/` | scripts only; we use Vercel |
 
 ---
 
@@ -198,7 +199,12 @@ Shared contract: [docs/prd/README.md](docs/prd/README.md). Demo video + live dem
 
 ## Run it
 
-The demo runs from a laptop; the iPhone reaches it through an HTTPS tunnel. Needs **Python 3.10+** and Node 20+.
+**Hosted: https://visioncompanion.vercel.app** (Vercel: the app as static files, the FastAPI server as
+one Python function via [`api/index.py`](api/index.py); keys in the Vercel project's environment
+variables; a Vercel Firewall rule limits `/api` to 400 requests a minute per address). Redeploy from
+the repo root with `vercel deploy --prod`.
+
+**On a laptop** (the backup): the iPhone reaches it through an HTTPS tunnel. Needs **Python 3.10+** and Node 20+.
 
 ```bash
 cd server && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt

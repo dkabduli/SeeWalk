@@ -2,10 +2,13 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
   "installCommand": "cd web && npm ci",
-  "buildCommand": "cd web && VITE_MOCK_API=1 npm run build",
+  "buildCommand": "cd web && npm run build",
   "outputDirectory": "web/dist",
   "functions": {
-    "api/index.py": { "includeFiles": "server/{config,db,hazards}.py" }
+    "api/index.py": { "includeFiles": "server/*.py", "maxDuration": 30 }
   },
-  "rewrites": [{ "source": "/api/(.*)", "destination": "/api/index" }]
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index" },
+    { "source": "/__lablog", "destination": "/api/index" }
+  ]
 }
