@@ -57,6 +57,7 @@ Regenerate after changing the flow: `python3 docs/img/make_how_it_works.py`.
 | "…what's blocking my path?" | "A chair and a bin ahead" / "Nothing detected in your path" (never "clear") |
 | "…read this." | The sign or label, word for word |
 | "…where was the elevator?" | From the last 30 s of the walk: "Elevator was on your left" |
+| "…where's the nearest pothole?" / "…what's around me?" | From the hazard map: *"Nearest: about 200 metres, in the road, at 235 Nicholas Street…"* (see [Hazard map](#hazard-map-tiger-data-the-map-by-ear)) |
 | "…is it safe to cross?" | "I can't tell you when it's safe to cross. Listen for traffic and use your cane." |
 
 **On screen** (for a companion walking alongside, and for low-vision users):
@@ -85,22 +86,61 @@ Regenerate after changing the flow: `python3 docs/img/make_how_it_works.py`.
 
 ---
 
-## Hazard map (Tiger Data)
+## Hazard map (Tiger Data): the map, by ear
 
-**Where it is:** tap **📍 Hazard map** on the start screen, or open [`/?map`](https://visioncompanion.vercel.app/?map) (French: the same link on the French start screen). **← Walk** goes back.
+The walker is blind or has low vision, so **they never see this map**. It only matters because it turns into
+sound: *what* is reported, *how far*, *which side* of the way they're walking, and *whether the location can be
+trusted right now*. The screen map (`?map`) is for sighted helpers, setting up a demo, and judges.
+Full design: [docs/prd/location-alerts.md](docs/prd/location-alerts.md).
 
-**What goes on it**, all stored in **Tiger Data** (Tiger Cloud, PostgreSQL + TimescaleDB):
+### What's in it (all in Tiger Data: Tiger Cloud, PostgreSQL + TimescaleDB)
 
 | Source | What | How it gets there |
 |---|---|---|
-| **Walkers** (filled pins) | Potholes, uneven pavement, obstacles, construction, curbs Gemini saw with confidence ≥ 0.7, with GPS and time. No photos, no people. Deduped: the same walk, type and spot within 15 m and 5 min is saved once | The phone sends each one during the walk (`POST /hazards`), including hazards in photos taken for a question. Saved in the `hazard_reports` **hypertable** |
-| **City of Ottawa 311** (rings) | Reports the city **has not fixed yet**: potholes, lifted, sunken or broken sidewalk, broken curbs and high curb lips, branches over the sidewalk, and crossings whose walk signal, audible signal or push button is broken. About 1,500 across the city | [Ottawa's open 311 file](https://open.ottawa.ca/) (updated daily, Open Government Licence) → `server/city311.py` → the `city_reports` table. Daily by Vercel Cron, or `scripts/import_311.py` |
+| **Walkers** (filled pins) | Potholes, uneven pavement, obstacles, construction and curbs that Gemini saw with confidence ≥ 0.7, with GPS and time. No photos, no people | Sent during every walk (`POST /hazards`), also from photos taken for a question. Stored in the **`hazard_reports` hypertable** (time-series). The same walk, type and spot within 15 m and 5 min is saved once |
+| **Pinned** | A real hazard someone pinned standing beside it (📍 Pin here on the map page) | `POST /hazards` with `source: "pinned"`. Walkers hear it like a sighting. (`test` pins from automated smoke tests are never announced) |
+| **City of Ottawa 311** (rings) | ~1,500 reports the city **hasn't fixed yet**: potholes, lifted, sunken or broken sidewalk, broken curbs, branches over the sidewalk, and crossings whose walk signal, **audible signal** or push button is broken | [Ottawa's open 311 file](https://open.ottawa.ca/) (Open Government Licence) → `server/city311.py` → the `city_reports` table. Refreshed daily by Vercel Cron (`CRON_SECRET`), or `scripts/import_311.py` |
 
-**What the walker gets from it:**
+Around uOttawa that's about **100 reports within 1 km**, 58 of them potholes (most in the road).
 
-- **Area briefing.** A few seconds after Start (and with the **Area briefing** button on the map), Gemini turns the real reports within 300 m into one or two sentences. Sidewalk, curb and crossing problems come first, with street names: *"Heads up: two lifted sidewalk panels on Laurier, and the walk signal at King Edward is broken."* Gemini only rewords the list. If it adds safety talk or answers in the wrong language, a plain summary is said instead. It never says the area is clear.
-- **"Reported nearby".** During a walk, within 25 m of a known sidewalk problem (a city report, or another walker's sighting from the last 14 days), it says once, at low priority: *"Reported nearby: broken walk signal at the crossing."* GPS gives no facing, so it says "nearby", not left or right. Potholes out in the road stay on the map but are never walk alerts: beside a busy road they would come every few steps. Off in voice-only mode.
-- **The map page:** pins by type and source, the most-reported spots, a time range, and a test pin (your GPS, or the middle of the map when location is off).
+### What the walker hears
+
+| When | They hear (EN; French too) |
+|---|---|
+| **Before leaving the house:** tap **🗣️ Potholes near me** at the top of the start screen (works with VoiceOver, and with the ringer off) | *"3 potholes reported within 1 kilometre. Nearest: about 200 metres, in the road, at 235 Nicholas Street. Next: …"* |
+| **Start walk** | a Gemini **area briefing** of real reports within 300 m: *"Watch for a lifted or sunken sidewalk panel at 109 Osgoode Street…"* (Gemini only rewords the list; plain summary if it adds safety talk or the wrong language; never "clear") |
+| **Walking toward a reported hazard**, ~40 m, if it's **ahead** | a soft two-note **map chime** (different from the camera's beep: *reported*, not *seen*), then *"Lifted or sunken sidewalk panel reported about 40 metres ahead."* |
+| **~15 m from it**, any side | *"Pothole nearby, on your left. Be careful."* — panned to that ear |
+| **"VisionCompanion, where's the nearest pothole?"** / *"…any potholes near me?"* | the nearest three potholes within 1 km (road ones too, marked "in the road"), rough metres, street address, and **ahead / on your left / behind you** once they're walking |
+| **"VisionCompanion, what's around me?"** | the same for every reported sidewalk problem, each named |
+| GPS lost or weak / back | once each: *"Location is weak. Reported hazards paused."* · *"Location back."* · *"Location is off. Reported hazards won't be announced."* |
+| The camera sees the same pothole | only the camera's *"Pothole ahead"*: the map doesn't repeat it |
+
+- Map alerts are **low priority**: they never interrupt a camera alert or an answer. They wait for silence and are only
+  marked said once spoken, so a busy moment delays them, never loses them.
+- **Walk alerts** use sidewalk hazards only (walkers, pins, city sidewalk and crossing reports). Road potholes are
+  said only when someone **asks** about potholes: beside a busy road they would otherwise come every few steps.
+- The city often files several reports for one spot: one place is said once.
+
+### Where the walker is: honest GPS
+
+- The iPhone's GPS is the best a web app has: **5–15 m** outdoors on a normal street, 20–50 m between tall
+  buildings. It reports its own accuracy with every reading. Google Maps or Gemini can't make it more precise.
+- **Smoothing:** an accuracy-weighted average of the last ~5 s of readings, so one jumpy reading can't set off an alert.
+- **Which way they're walking:** iOS's own heading while moving, otherwise the bearing of their last ≥ 8 m. Standing
+  still, answers give distance and address but **no left/right** (a wrong "on your left" is worse than none).
+- **Warn early, never late:** the distance used is *"it could be this close"* (distance − GPS accuracy). Readings worse
+  than ±50 m are ignored, and the walker is told once.
+- **Everything within 1.5 km is loaded once at Start** and checked on the phone, so a weak signal mid-walk doesn't stop
+  the alerts (reloaded after 750 m or 5 minutes).
+- **Privacy:** the walker's position isn't stored. Only a hazard's own position is saved, when one is seen or pinned.
+
+### The map page (`?map`, for helpers)
+
+- A compact card on a phone: **📍 You are here (±8 m) · nearest: pothole, 38 m**, and **📍 Pin here** with a type
+  picker. Filters (time range, sources, types) and the Gemini **Area briefing** fold away behind **Filters**
+  (open on a computer, remembered).
+- Pins **fade in nearest-first** and never redraw on refresh (no flicker); the "you are here" dot glides with you.
 
 ---
 
@@ -109,7 +149,7 @@ Regenerate after changing the flow: `python3 docs/img/make_how_it_works.py`.
 **In plain English:** the phone shows a live camera feed, but nobody presses a shutter. Every **0.8 s** the app grabs **one still snapshot** and sends it to our server, with up to **two at Gemini at once**, so a fresh look arrives about every second even though each answer takes ~1.6–2 s. Gemini returns structured hazards (e.g. *pothole, ahead, near, 0.95 confidence, "Pothole ahead"*). The phone decides whether it's worth saying and plays a **pre-recorded ElevenLabs clip** for it instantly. Nothing is saved to the camera roll. A dark street still goes to Gemini. iOS is left to choose the frame rate, so the exposure can lengthen at night.
 
 ```
- PHONE (iPhone Safari, worn on chest)                     SERVER (FastAPI, on the laptop)
+ PHONE (iPhone Safari, worn on chest)                     SERVER (FastAPI on Vercel)      
 ┌───────────────────────────────────────┐              ┌────────────────────────────────────────┐
 │ 1. CAPTURE                            │              │                                        │
 │    rear camera → canvas → 768px JPEG  │  2. POST     │ 3. GEMINI 3.5 Flash-Lite               │
@@ -190,14 +230,15 @@ Alternatives we measured and rejected:
 | `POST` | `/analyze` | `{ image, prev_image?, lang: "en" \| "fr", careful? }` | `SceneResult`; `503` if Gemini fails or is slow. `careful` (questions) uses Gemini 3.5 Flash |
 | `POST` | `/listen` | `{ audio: <16 kHz WAV base64>, lang, image? }` | `{ heard, intent, answer, command }` |
 | `POST` | `/tts` | `{ text, lang, voice: "river" \| "alice" \| "charlie" \| "moyo" }` | `audio/mpeg` |
-| `POST` / `GET` | `/hazards`, `/hazards/hotspots` | `{ session_id, lat, lon, type, confidence, source }` / `?days=` | `{ saved, reason }` / walkers' pins and most-reported spots |
+| `POST` / `GET` | `/hazards`, `/hazards/hotspots` | `{ session_id, lat, lon, type, confidence, source: gemini \| fast_layer \| pinned \| test }` / `?days=` | `{ saved, reason }` / walkers' pins and most-reported spots |
 | `GET` | `/hazards/city` | `?south&west&north&east` (≤ 1° across) | open Ottawa 311 reports in that area |
-| `GET` | `/hazards/near` | `?lat&lon&radius≤100&session_id` | known sidewalk problems nearby, nearest first (city + other walkers) |
+| `GET` | `/hazards/near` | `?lat&lon&radius≤2000&session_id&walkway_only=true` | known hazards nearby, nearest first (city + walkers + pins). A walk loads 1.5 km at Start; "potholes near me" asks 1 km with `walkway_only=false` |
 | `POST` | `/hazards/briefing` | `{ lat, lon, lang }` | `{ text, count, by: "gemini" \| "plain" }` |
 | `GET` | `/hazards/city/refresh` | `Authorization: Bearer $CRON_SECRET` | re-imports Ottawa 311 (Vercel Cron, daily) |
 
-All `/hazards…` routes answer `503` until `DATABASE_URL` is set.
 | `GET` | `/health` | | `{ "ok": true }` |
+
+All `/hazards…` routes answer `503` until `DATABASE_URL` is set. Database errors are logged by kind only, never with the connection string.
 
 **Bundled clips:** every street alert in every direction, plus system messages and the intro, in each voice and language (`web/public/audio/`, keys in [`web/src/audio/clips.json`](web/src/audio/clips.json)). Regenerate with `server/scripts/generate_clips.py`.
 
@@ -267,7 +308,7 @@ Hack the Hill III. The live phone link is [https://visioncompanion.vercel.app](h
 | Questions that must be right | "What's ahead" and "where was…" use a stronger model or the last 30 seconds of memory. "Is it safe to cross?" is always a refusal |
 | Quiet places | After 10 seconds with no alert, one description of the place. The same place is not repeated |
 | Measured | Latency table above. Sample photos, including Wikimedia Commons, go through `eval_samples.py` |
-| Hazard map | Walks save hazards to Tiger Data; Ottawa's open 311 reports are imported; the walker hears an area briefing (Gemini) and "Reported nearby" alerts; `?map` is linked from the start screen |
+| Hazard map, by ear | Live on Tiger Data: walks save hazards, pins, ~1,500 open Ottawa 311 reports. The walker hears reported hazards ~40 m ahead and ~15 m away (GPS + direction of travel), can ask "where's the nearest pothole?" by voice or with a button before leaving home, and gets an area briefing at Start. Checked end to end on the live site with a simulated walk toward a real city report |
 
 ### Checkpoints still ahead
 
@@ -277,7 +318,7 @@ Sunday Sept 27. Feature freeze is **1:00 AM EDT** (bugs only after that). Submit
 |---|---|
 | **Demo video, about 2 minutes** | Script: [docs/demo-script.md](docs/demo-script.md). Shot list: [docs/shot-list.md](docs/shot-list.md). Film outside in daylight if Saturday's light is gone: Sunday 7–8 AM |
 | **Devpost** | Four names (Abdul, Aroha, Jibril, Siddig), the video, this GitHub repo, and [https://visioncompanion.vercel.app](https://visioncompanion.vercel.app) |
-| **Hazard map on the live site** | Vercel → project → Settings → Environment Variables: add `DATABASE_URL` (Tiger Cloud connection string, Production) and `CRON_SECRET` (any long random string, for the daily 311 refresh), then `vercel deploy --prod`. Until then `/api/hazards/…` answers `503 … DATABASE_URL not set` |
+| **A real walk with GPS** | The location alerts were tested with a simulated GPS walk. On the phone: walk toward 109 Osgoode St (a real city report) or a pinned pothole |
 | **GoDaddy domain** | Point a Registry domain at the Vercel app so the link has a real name. Prize target in the original spec: Best Domain Name |
 | **Live demo at the table** | Read this, what am I holding, what's blocking my path, what's ahead, and the cross refusal. The video shows the walk; the table shows the questions |
 
@@ -305,7 +346,7 @@ Shared contract: [docs/prd/README.md](docs/prd/README.md). Demo video + live dem
 - The phone app is static files. The FastAPI server is one Python function, [`api/index.py`](api/index.py).
 - Keys live in the Vercel project's environment variables.
 - A firewall rule limits `/api` to 400 requests a minute per address.
-- Redeploy from the repo root with `vercel deploy --prod`.
+- Redeploy from the repo root with `vercel deploy --prod`. **Deploy only from `main`, after `git pull`**: deploying another branch overwrites teammates' fixes on the live link.
 
 **On a laptop** (the backup): the iPhone reaches it through an HTTPS tunnel. Needs **Python 3.10+** and Node 20+.
 
