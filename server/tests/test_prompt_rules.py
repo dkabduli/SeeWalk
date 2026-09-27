@@ -37,3 +37,23 @@ def test_whats_ahead_names_the_scene_and_not_just_a_person():
     assert "speaks a real hazard first" in RULES
     assert "A person does not replace the summary" in RULES
     assert "water fountain" in RULES
+
+
+def test_stop_signs_are_not_held_to_the_corridor_rule():
+    # Stop signs stand at the curb, never in the corridor; the corridor rule used to hide them
+    assert "Stop signs and traffic lights are the exception" in RULES
+    assert "a clearly visible stop sign is never left out" in RULES
+    assert "a clearly visible stop sign is always one of the 3" in RULES
+    assert "a triangular yield sign is not a stop sign" in RULES
+
+
+def test_people_in_the_corridor_are_reported_but_never_described():
+    assert "someone standing or walking in the corridor within ~6 m" in RULES
+    assert "People off to the side, on another sidewalk, or farther away are left out" in RULES
+    assert "never describe how anyone looks" in RULES
+
+
+def test_crosswalk_wording_is_unchanged():
+    # Crosswalks work well in testing: keep this exact rule
+    assert "crosswalk: painted crossing lines on the road ahead." in RULES
+    assert "Report these three even if they are at the edge of the image, as long as they are clearly visible." in RULES
