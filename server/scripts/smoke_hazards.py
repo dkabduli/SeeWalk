@@ -62,7 +62,9 @@ def main() -> int:
             sidewalk = next((c for c in city if c["walkway"]), None)
             if sidewalk:
                 around = http.get("/hazards/near", params=dict(lat=sidewalk["lat"], lon=sidewalk["lon"], session_id=session)).json()["near"]
-                check("walk alert finds it nearby", any(n["id"] == sidewalk["id"] for n in around), sidewalk["label_en"])
+                # the city often files one problem twice; the server keeps one per spot, so match kind + place, not id
+                found = any(n["label_en"] == sidewalk["label_en"] and n["metres"] < 15 for n in around)
+                check("walk alert finds it nearby", found, sidewalk["label_en"])
             r = http.post("/hazards/briefing", json={"lat": 45.4231, "lon": -75.6831, "lang": "en"})
             check("area briefing", r.status_code == 200 and r.json().get("text"), f"({r.json().get('by')}) {r.json().get('text', '')[:90]}")
     except httpx.HTTPError as e:
