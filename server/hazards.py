@@ -114,11 +114,12 @@ def get_city_reports(south: float = Query(ge=-90, le=90), west: float = Query(ge
 
 @router.get("/hazards/near")
 def get_near(lat: float = Query(ge=-90, le=90), lon: float = Query(ge=-180, le=180),
-             radius: float = Query(60, gt=0, le=2000), session_id: str = Query("", max_length=64)):
+             radius: float = Query(60, gt=0, le=2000), session_id: str = Query("", max_length=64),
+             walkway_only: bool = Query(True, description="false: also potholes out in the road (asked about potholes)")):
     """Known hazards around the walker, nearest first: open city reports + other walkers' sightings."""
     _require_db()
     try:
-        return {"near": db.near(lat=lat, lon=lon, radius=radius, exclude_session=session_id or None, walkway_only=True)}
+        return {"near": db.near(lat=lat, lon=lon, radius=radius, exclude_session=session_id or None, walkway_only=walkway_only)}
     except psycopg.Error as e:
         log.warning("near failed: %s", db_error(e))
         raise HTTPException(503, "Hazard map database unavailable")

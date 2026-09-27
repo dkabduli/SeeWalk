@@ -48,6 +48,7 @@ PROMPT = """The audio is a short clip from the phone microphone of a blind pedes
    - is it safe to cross / can I cross                               → cross
    - where was / where were / où était (the elevator, the stairs)   → where
    - what's around me / near me / anything reported nearby / autour de moi → around
+   - where's the nearest pothole / any potholes near me / le nid-de-poule le plus proche → around
    Anything else (no wake word, background talk, or a voice announcing hazards like "Pothole ahead")
    is none.
 3. answer, in {language}, from the image only, for these intents:
@@ -83,11 +84,19 @@ KEYWORDS: dict[str, re.Pattern] = {
     "where": re.compile(r"where was|where were|where'?s|où était|ou etait|où est|ou est", re.I),
     # The map, read aloud: reported hazards around the walker's GPS position (location alerts)
     "around": re.compile(
-        r"around (?:me|here|us)|near me|nearby|anything reported|reported|autour (?:de moi|d'ici)|près de moi"
+        r"around (?:me|here|us)|near me|nearby|anything reported|reported|nearest|closest|potholes?|autour (?:de moi|d'ici)"
+        r"|près de moi|plus proche|nids?[- ]de[- ]poule"
         r"|à proximité|a proximite|signal[ée]",
         re.I,
     ),
 }
+
+
+# Asking for the nearest reported hazards (the map), which also starts with "where's…"
+NEAREST = re.compile(
+    r"nearest|closest|any potholes?|potholes? (?:near|around)|near me|around me|plus proche|autour de moi|près de moi",
+    re.I,
+)
 
 
 # what's ahead / what's in my way are spoken from the scene look (gemini.py), not from this call.
@@ -103,6 +112,9 @@ def verified_intent(intent: str, heard: str) -> str:
     """Keep Gemini's intent only if the transcript backs it up."""
     if not WAKE.search(heard):
         return "none"
+    # "Where's the nearest pothole?" / "any potholes near me?" is the map, not memory: checked first
+    if NEAREST.search(heard) and intent in ("around", "whats_ahead", "path", "where", "none"):
+        return "around"
     # "Where was the elevator?" is memory, even if the model heard it as what's ahead.
     if KEYWORDS["where"].search(heard):
         return "where"

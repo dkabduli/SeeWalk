@@ -42,6 +42,27 @@ function panelOpenAtStart(): boolean {
   return typeof window !== "undefined" && window.matchMedia("(min-width: 720px)").matches;
 }
 
+/** Keep the pins that are already on the map; add only new ones (they fade in, nearest to the
+ *  middle first) and remove only the ones that went away. Redrawing everything on every refresh
+ *  and every pan made the whole map flicker. */
+function syncPins<T extends { id: string; lat: number; lon: number }>(
+  layer: L.LayerGroup, drawn: Map<string, L.CircleMarker>, items: T[], centre: L.LatLng | null,
+  make: (item: T) => L.CircleMarker,
+) {
+  const want = new Set(items.map((i) => i.id));
+  for (const [id, marker] of drawn) {
+    if (!want.has(id)) { layer.removeLayer(marker); drawn.delete(id); }
+  }
+  const fresh = items.filter((i) => !drawn.has(i.id));
+  if (centre) fresh.sort((a, b) => centre.distanceTo([a.lat, a.lon]) - centre.distanceTo([b.lat, b.lon]));
+  fresh.forEach((item, n) => {
+    const marker = make(item).addTo(layer);
+    const el = marker.getElement() as SVGElement | undefined;
+    if (el) el.style.animationDelay = `${Math.min(n * 30, 900)}ms`; // a gentle ripple, never more than ~1 s
+    drawn.set(item.id, marker);
+  });
+}
+
 type Status = "loading" | "ready" | "map_off" | "db_down" | "error";
 
 function ago(iso: string) {
@@ -80,6 +101,8 @@ export default function HazardMap() {
   const mapEl = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const pins = useRef<L.LayerGroup | null>(null);
+  const drawnPins = useRef(new Map<string, L.CircleMarker>());
+  const drawnCity = useRef(new Map<string, L.CircleMarker>());
   const cityPins = useRef<L.LayerGroup | null>(null);
   const [view, setView] = useState(0); // bumps when the map stops moving
   const fitted = useRef(false);
@@ -122,15 +145,24 @@ export default function HazardMap() {
     );
     return () => navigator.geolocation.clearWatch(id);
   }, []);
+  // The dot and its accuracy circle are made once and then moved, so they glide instead of blinking
+  const meDot = useRef<{ ring: L.Circle; dot: L.CircleMarker } | null>(null);
   useEffect(() => {
     const layer = me.current;
     if (!layer || !map.current) return;
-    layer.clearLayers();
-    if (!here) return;
-    L.circle([here.lat, here.lon], { radius: here.accuracy, color: "#2f80ed", weight: 1, fillColor: "#2f80ed", fillOpacity: 0.12 }).addTo(layer);
-    L.circleMarker([here.lat, here.lon], { radius: 8, color: "#fff", weight: 3, fillColor: "#2f80ed", fillOpacity: 1 })
-      .bindPopup(`You are here (±${Math.round(here.accuracy)} m)`).addTo(layer);
-    if (!followed.current) { map.current.flyTo([here.lat, here.lon], 18); followed.current = true; }
+    if (!here) { layer.clearLayers(); meDot.current = null; return; }
+    const at: L.LatLngTuple = [here.lat, here.lon];
+    if (!meDot.current) {
+      meDot.current = {
+        ring: L.circle(at, { radius: here.accuracy, color: "#2f80ed", weight: 1, fillColor: "#2f80ed", fillOpacity: 0.12 }).addTo(layer),
+        dot: L.circleMarker(at, { radius: 8, color: "#fff", weight: 3, fillColor: "#2f80ed", fillOpacity: 1 }).addTo(layer),
+      };
+    } else {
+      meDot.current.ring.setLatLng(at).setRadius(here.accuracy);
+      meDot.current.dot.setLatLng(at);
+    }
+    meDot.current.dot.bindPopup(`You are here (±${Math.round(here.accuracy)} m)`);
+    if (!followed.current) { map.current.flyTo(at, 18); followed.current = true; }
   }, [here]);
 
   // Pin a real hazard where you're standing (e.g. beside a pothole, for the demo). Saved as "pinned":
@@ -191,18 +223,16 @@ export default function HazardMap() {
   useEffect(() => {
     const layer = cityPins.current;
     if (!layer) return;
-    layer.clearLayers();
-    for (const r of cityShown) {
+    syncPins(layer, drawnCity.current, cityShown, map.current?.getCenter() ?? null, (r) => {
       const { label, color } = TYPE_INFO[r.type];
-      L.circleMarker([r.lat, r.lon], { radius: 7, color, weight: 3, fillColor: "#fff", fillOpacity: 0.85 })
+      return L.circleMarker([r.lat, r.lon], { radius: 7, color, weight: 3, fillColor: "#fff", fillOpacity: 0.85, className: "hm-pin" })
         .bindPopup(
           `<b>${esc(label)}</b>: ${esc(r.label_en)}` +
           (r.address ? `<br>${esc(r.address)}` : "") +
           `<br><small>Ottawa 311, open${r.opened ? ` since ${esc(r.opened)}` : ""}` +
           `${r.walkway ? "" : " · in the road: not a walk alert"}</small>`,
-        )
-        .addTo(layer);
-    }
+        );
+    });
   }, [cityShown]);
 
   async function briefHere() {
@@ -217,23 +247,21 @@ export default function HazardMap() {
     }
   }
 
-  // Redraw pins; zoom to them the first time there are any.
+  // Walkers' sightings and pinned hazards; zoom to them the first time there are any.
   useEffect(() => {
     const layer = pins.current;
     if (!layer || !map.current) return;
-    layer.clearLayers();
-    for (const h of shown) {
+    syncPins(layer, drawnPins.current, shown, map.current.getCenter(), (h) => {
       const { label, color } = TYPE_INFO[h.type];
-      L.circleMarker([h.lat, h.lon], { radius: 9, color: "#fff", weight: 2, fillColor: color, fillOpacity: 0.9 })
+      return L.circleMarker([h.lat, h.lon], { radius: 9, color: "#fff", weight: 2, fillColor: color, fillOpacity: 0.9, className: "hm-pin" })
         .bindPopup(
           `<b>${label}</b><br>${Math.round(h.confidence * 100)}% sure · ${ago(h.time)}` +
           `<br><small>${
             h.source === "pinned" ? "pinned by hand at the spot · walkers hear it"
             : h.source === "test" ? "test pin · not announced to walkers"
             : `seen by ${h.source === "fast_layer" ? "on-device detector" : "Gemini"} · walkers hear it`}</small>`,
-        )
-        .addTo(layer);
-    }
+        );
+    });
     if (!fitted.current && shown.length) {
       map.current.fitBounds(L.latLngBounds(shown.map((h) => [h.lat, h.lon])), { padding: [60, 60], maxZoom: 17 });
       fitted.current = true;

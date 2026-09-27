@@ -120,6 +120,9 @@ def test_near_passes_the_walk_so_it_skips_its_own_sightings(client, monkeypatch)
     # A walk loads everything within 1.5 km once at Start (location alerts); more than 2 km is refused
     assert client.get("/hazards/near?lat=45.42&lon=-75.68&radius=1500").status_code == 200
     assert client.get("/hazards/near?lat=45.42&lon=-75.68&radius=2500").status_code == 422
+    # "Where's the nearest pothole?" asks for road potholes too
+    client.get("/hazards/near?lat=45.42&lon=-75.68&radius=1000&walkway_only=false")
+    assert seen["walkway_only"] is False
 
 
 def test_a_hazard_pinned_on_the_map_page_is_saved(client):

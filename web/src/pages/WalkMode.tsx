@@ -15,6 +15,7 @@ import { sendToLaptop } from "../debug/laptopLog";
 import { startHazardReporter, type HazardReporter } from "../map/hazardReporter";
 import { fetchBriefing } from "../map/hazardsApi";
 import { createLocationAlerts, type LocationAlerts } from "../map/locationAlerts";
+import { askNearby, asksPotholes } from "../map/nearbyReport";
 import { strings } from "../i18n/strings";
 import "../styles/walk.css";
 
@@ -270,7 +271,7 @@ export default function WalkMode() {
     if (text) {
       setShown({ text, level: "info" });
       try {
-        const mp3 = await tts(text, lang, voice);
+        const mp3 = await tts(text, lang, voice, 6000); // answers can be long (three potholes and their streets)
         if (speechId.current === id) await audio.playSpeech(mp3, 0);
         return;
       } catch { /* live voice failed: fall through */ }
@@ -487,6 +488,26 @@ export default function WalkMode() {
     audio.setVoice(id);
   }
 
+  // "Potholes near me" on the start screen: where the nearest reported potholes are, before the walk
+  const [nearMeText, setNearMeText] = useState("");
+  const [nearMeBusy, setNearMeBusy] = useState(false);
+  async function potholesNearMe() {
+    if (nearMeBusy) return;
+    audio.primeMedia();                          // inside the tap: iOS lets the answer play in a moment
+    setNearMeBusy(true);
+    setNearMeText("");
+    try {
+      const text = await askNearby(lang, true);
+      setNearMeText(text);
+      setNearMeBusy(false);                      // found: the label goes back while the answer is spoken
+      log("say", `${text} (potholes near me, start screen)`);
+      const mp3 = await tts(text, lang, voice, 6000);
+      await audio.playMediaMp3(mp3);
+    } catch { /* the text stays on screen */ } finally {
+      setNearMeBusy(false);
+    }
+  }
+
   async function whatsAhead() {
     if (!walking) return;
     log("ask", "What's ahead? (tap)");
@@ -503,10 +524,14 @@ export default function WalkMode() {
       return;
     }
     if (c.intent === "around") {
-      // "What's around me?": the map read aloud, from the walker's GPS position
+      // "Where's the nearest pothole?" / "what's around me?": the map read aloud, from the walker's
+      // GPS position and direction of travel (a fresh reading if the walk hasn't one yet)
       walk.dropLook();
-      const text = places.current?.around(lang) ?? t.gpsOff;
-      await answeringQuestion(async () => { await sayAnswer(text, "around"); });
+      const la = places.current;
+      await answeringQuestion(async () => {
+        const text = await askNearby(lang, asksPotholes(c.heard), la?.position() ?? null, la?.direction() ?? null);
+        await sayAnswer(text, "around");
+      });
       return;
     }
     if (c.intent === "whats_ahead" || c.intent === "path") {
@@ -590,6 +615,13 @@ export default function WalkMode() {
             <li>{t.step2}</li>
             <li>{t.step3}</li>
           </ol>
+          {/* Before leaving the house: the nearest reported potholes, spoken (the map, for someone who can't see it) */}
+          <div className="near-me">
+            <button className="near-me-btn" onClick={potholesNearMe} disabled={nearMeBusy}>
+              <span aria-hidden="true">🗣️</span> {nearMeBusy ? t.findingYou : t.nearMe}
+            </button>
+            {nearMeText && <p className="near-me-text">{nearMeText}</p>}
+          </div>
           <a className="map-link" href="?map">{t.mapLink}</a>
           <div className="phrases">
             <p className="say-then">{t.sayThen}</p>
@@ -598,6 +630,7 @@ export default function WalkMode() {
               <li>{t.cmdHolding}</li>
               <li>{t.cmdPath}</li>
               <li>{t.cmdRead}</li>
+              <li>{t.cmdNearest}</li>
             </ul>
           </div>
           <div className="voices">

@@ -80,3 +80,12 @@ def test_whats_around_me_is_the_map_read_aloud():
     assert verified_intent("around", "what's around me?") == "none"          # no wake word
     assert verified_intent("whats_ahead", "SeeWalk, what's ahead?") == "whats_ahead"
     assert verified_intent("holding", "SeeWalk, what am I holding near me?") == "holding"  # not stolen
+
+
+def test_nearest_pothole_questions_are_the_map_not_memory():
+    for heard in ["VisionCompanion, where's the nearest pothole?", "SeeWalk, any potholes near me?",
+                  "VisionCompanion, where are the closest potholes?", "SeeWalk, où est le nid-de-poule le plus proche ?"]:
+        assert verified_intent("where", heard) == "around", heard
+        assert verified_intent("around", heard) == "around", heard
+    assert verified_intent("where", "SeeWalk, where was the elevator?") == "where"   # memory still works
+    assert verified_intent("read", "SeeWalk, read the sign near me") == "read"       # not stolen

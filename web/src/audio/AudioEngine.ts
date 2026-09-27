@@ -87,6 +87,34 @@ export class AudioEngine {
   // walk it isn't, which is why the walk was audible but the samples were silent).
   private sample: HTMLAudioElement | null = null;
 
+  // Speech on the start screen (before the mic is on) also goes through an <audio> element, primed
+  // inside the tap so iOS lets it play a few seconds later, when the answer is ready.
+  private media: HTMLAudioElement | null = null;
+
+  /** Call inside the tap. */
+  primeMedia() {
+    const el = new Audio(clipUrl(this.voice, "en", "walk_started"));
+    el.muted = true;
+    el.setAttribute("playsinline", "");
+    void el.play().catch(() => {});
+    this.media = el;
+  }
+
+  /** Play an mp3 (live voice) through the primed element; resolves when it ends. */
+  async playMediaMp3(mp3: ArrayBuffer) {
+    const el = this.media ?? new Audio();
+    const url = URL.createObjectURL(new Blob([mp3], { type: "audio/mpeg" }));
+    try {
+      el.pause();
+      el.muted = false;
+      el.src = url;
+      await el.play();
+      await new Promise<void>((done) => { el.onended = () => done(); el.onpause = () => done(); });
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
   /** Play one bundled clip in any voice (the voice cards). Call straight from the tap, with no
    *  await before it: iOS only lets media start inside the gesture. Resolves when it ends. */
   previewClip(voice: VoiceId, lang: Lang, key: string): Promise<void> {

@@ -115,6 +115,18 @@
   background: var(--red); color: var(--white);
 }
 /* Link to the hazard map (?map): a big, plain target, not a tiny text link */
+/* Start screen: "Potholes near me" (spoken), then the map link */
+.walk .near-me { display: grid; gap: 8px; }
+.walk .near-me-btn {
+  display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 56px; padding: 10px 16px;
+  border-radius: 16px; background: var(--white); color: var(--bg); font-size: 18px; font-weight: 800;
+}
+.walk .near-me-btn:disabled { opacity: 0.75; }
+.walk .near-me-btn:active { background: #dcdad4; }
+.walk .near-me-text {
+  margin: 0; padding: 10px 12px; border-radius: 12px; background: rgb(255 255 255 / 0.06);
+  border: 1px solid var(--line); font-size: 15px; line-height: 1.4; color: var(--text);
+}
 .walk .map-link {
   display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 10px 14px;
   border: 1px solid var(--line); border-radius: 14px; background: var(--panel);

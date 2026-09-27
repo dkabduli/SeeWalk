@@ -124,21 +124,3 @@ describe("loading and the camera", () => {
     expect(la.next("en")).toBeNull();
   });
 });
-
-describe("what's around me", () => {
-  async function around(hazards: NearHazard[], lang: "en" | "fr" = "en") {
-    const { la } = await walk(hazards, 12, walkingNorth, { busy: () => true });
-    return la.around(lang);
-  }
-  it("nearest first, with distance and side", async () => {
-    const text = await around([
-      hazard(offset(START, 60, 20), { id: "a" }),
-      hazard(offset(START, -90, 0), { id: "b", type: "uneven_surface", label_en: "uneven pavement", label_fr: "chaussée inégale" }),
-    ]);
-    expect(text).toBe("Reported within 200 metres: pothole, about 40 metres ahead; uneven pavement, about 90 metres behind you.");
-  });
-  it("nothing reported: says so, never 'clear'", async () => {
-    expect(await around([])).toBe("Nothing reported within 200 metres.");
-    expect(await around([], "fr")).toBe("Rien de signalé à moins de 200 mètres.");
-  });
-});

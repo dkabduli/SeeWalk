@@ -106,9 +106,11 @@ export const fetchCityReports = (b: Bbox, signal?: AbortSignal) =>
     `/hazards/city?south=${b.south}&west=${b.west}&north=${b.north}&east=${b.east}`, signal,
   ).then((d) => d.reports);
 
-export const fetchNear = (lat: number, lon: number, sessionId: string, radius = 60, signal?: AbortSignal) =>
+export const fetchNear = (lat: number, lon: number, sessionId: string, radius = 60, signal?: AbortSignal, walkwayOnly = true) =>
   getJson<{ near: NearHazard[] }>(
-    `/hazards/near?lat=${lat}&lon=${lon}&radius=${radius}&session_id=${encodeURIComponent(sessionId)}`, signal,
+    `/hazards/near?lat=${lat}&lon=${lon}&radius=${radius}&session_id=${encodeURIComponent(sessionId)}` +
+      (walkwayOnly ? "" : "&walkway_only=false"), // "where's the nearest pothole?" counts road ones too
+    signal,
   ).then((d) => d.near);
 
 /** One or two sentences about reported problems within 300 m, written by Gemini from real reports. */

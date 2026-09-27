@@ -14,7 +14,6 @@ export const LOAD_RADIUS_M = 1500;  // everything within 1.5 km, loaded once at 
 export const RELOAD_MOVE_M = 750;   // …again after moving this far from where it was loaded
 export const RELOAD_MS = 5 * 60_000; // …or every 5 minutes (new pins and sightings)
 export const WEAK_AFTER_MS = 20_000; // no good fix for this long → "Location is weak"
-export const AROUND_M = 200;        // "what's around me?"
 
 export type Stage = "ahead" | "nearby";
 export type GpsEvent = "off" | "weak" | "back";
@@ -172,28 +171,9 @@ export function createLocationAlerts({ sessionId, fetchNear = fetchNearApi, now 
       }
     },
 
-    /** "What's around me?": reported hazards within 200 m, nearest first, at most three. */
-    around(lang: Lang): string {
-      const t = now();
-      const all = placed(t);
-      if (!all) {
-        return lang === "fr"
-          ? "Je ne connais pas votre position pour l'instant."
-          : "I don't know where you are right now.";
-      }
-      const close = all.filter((p) => p.d <= AROUND_M).sort((a, b) => a.d - b.d).slice(0, 3);
-      if (!close.length) {
-        return lang === "fr" ? "Rien de signalé à moins de 200 mètres." : "Nothing reported within 200 metres.";
-      }
-      const parts = close.map(({ h, eff, side }) => {
-        const label = lang === "fr" ? h.label_fr : h.label_en;
-        if (eff <= NEARBY_M) return `${label}, ${lang === "fr" ? "tout près" : "nearby"}`;
-        const where = side ? ` ${SIDE_WORDS[lang][side]}` : "";
-        return lang === "fr"
-          ? `${label}, à environ ${round10(eff)} mètres${where}`
-          : `${label}, about ${round10(eff)} metres${where}`;
-      });
-      return (lang === "fr" ? "Signalé à moins de 200 mètres : " : "Reported within 200 metres: ") + parts.join("; ") + ".";
+    /** Direction of travel (degrees), or null when not known yet. */
+    direction(): number | null {
+      return track.direction(now());
     },
 
     /** Latest steadied position (for saving sightings), or null. */
