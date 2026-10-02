@@ -1,4 +1,4 @@
-![Vision Companion Banner](https://github.com/dkabduli/VisionCompanion/blob/main/web/public/VisionCompanion.png?raw=true)
+![VisionCompanion banner](web/public/VisionCompanion.png)
 
 # VisionCompanion
 **A white cane finds the ground. VisionCompanion finds everything else.** Potholes, curbs, steps, doors, construction, stop signs and branches at head height are announced calmly, before the cane reaches them, and only when it matters. Anything else, you ask: *"VisionCompanion, what's ahead?"*
@@ -8,9 +8,10 @@ VisionCompanion runs on an iPhone worn on a chest strap. It watches the path wit
 > Built by team **Goobers** (Abdul, Aroha, Jibril, Siddig) for Hack the Hill III (uOttawa, Sept 25–27, 2026). Original product spec: [`SEEWALK_SPEC.md`](SEEWALK_SPEC.md) (the project's first name was SeeWalk). Where the two differ, **this README describes the app as built**.
 
 **Live app:** [https://visioncompanion.vercel.app](https://visioncompanion.vercel.app)  
+**Demo video:** [https://www.youtube.com/watch?v=HKM--zb6ZgE](https://www.youtube.com/watch?v=HKM--zb6ZgE)  
 **Repository:** [https://github.com/dkabduli/VisionCompanion](https://github.com/dkabduli/VisionCompanion)
 
-Devpost deadline: **Sunday Sept 27, 2026, 10:00 AM EDT** (team target 9:30 AM). Judges read the commit history, so the work lives in this repo.
+Submitted to Hack the Hill III on Sunday Sept 27, 2026. Judges read the commit history, so the work lives in this repo.
 
 <p align="center">
   <img src="docs/img/phone-near-me.jpg" width="31%" alt="The start screen: 'Potholes near me' answered: 30 potholes reported within 1 kilometre, nearest about 200 metres in the road at 235 Nicholas Street">
@@ -349,17 +350,15 @@ Hack the Hill III. The live phone link is [https://visioncompanion.vercel.app](h
 | Measured | Latency table above. Sample photos, including Wikimedia Commons, go through `eval_samples.py` |
 | Hazard map, by ear | Live on Tiger Data: walks save hazards, pins, ~1,500 open Ottawa 311 reports. The walker hears reported hazards ~40 m ahead and ~15 m away (GPS + direction of travel), can ask "where's the nearest pothole?" by voice or with a button before leaving home, and gets an area briefing at Start. Checked end to end on the live site with a simulated walk toward a real city report |
 
-### Checkpoints still ahead
+### Submitted, and what's next
 
-Sunday Sept 27. Feature freeze is **1:00 AM EDT** (bugs only after that). Submit by **10:00 AM EDT**, team target **9:30 AM**.
+Submitted to Hack the Hill III on Sunday Sept 27, 2026. Demo video: [youtube.com/watch?v=HKM--zb6ZgE](https://www.youtube.com/watch?v=HKM--zb6ZgE) (script: [docs/demo-script.md](docs/demo-script.md), shot list: [docs/shot-list.md](docs/shot-list.md)).
 
-| Still to do | Why it matters |
+| Next | Why it matters |
 |---|---|
-| **Demo video, about 2 minutes** | Script: [docs/demo-script.md](docs/demo-script.md). Shot list: [docs/shot-list.md](docs/shot-list.md). Film outside in daylight if Saturday's light is gone: Sunday 7–8 AM |
-| **Devpost** | Four names (Abdul, Aroha, Jibril, Siddig), the video, this GitHub repo, and [https://visioncompanion.vercel.app](https://visioncompanion.vercel.app) |
 | **A real walk with GPS** | The location alerts were tested with a simulated GPS walk. On the phone: walk toward 109 Osgoode St (a real city report) or a pinned pothole |
-| **GoDaddy domain** | Point a Registry domain at the Vercel app so the link has a real name. Prize target in the original spec: Best Domain Name |
-| **Live demo at the table** | Read this, what am I holding, what's blocking my path, what's ahead, and the cross refusal. The video shows the walk; the table shows the questions |
+| **GoDaddy domain** | Point a Registry domain at the Vercel app so the link has a real name |
+| **Location alerts setting** | Off / Important only (default) / All, on the start screen. "Important only" says just "Pothole nearby, be careful"; "All" adds the 40 m heads-up, the start briefing and GPS news |
 
 Prize targets from [`SEEWALK_SPEC.md`](SEEWALK_SPEC.md) that this build is aimed at: **Best Use of Gemini API**, **Best Use of ElevenLabs**, **Best UI/UX**. plus **Best Use of Tiger Data** (the hazard map). **Best Domain Name (GoDaddy)** is still open. Vultr was the first hosting plan; Vercel is what is actually serving the phone.
 

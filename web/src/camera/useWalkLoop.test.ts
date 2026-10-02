@@ -406,6 +406,26 @@ describe("useWalkLoop", () => {
     expect(onResult).toHaveBeenCalledTimes(1);
   });
 
+  it("a photo from speech no question took doesn't answer a later question", async () => {
+    const { walk } = setup();
+    act(() => { void walk().start(); });
+    await tick();
+    calls[0].resolve(RESULT);
+    await tick();
+    act(() => walk().setPaused(true));
+    act(() => walk().primeLook());       // someone spoke; the check failed, so nothing took the photo
+    await tick(300);
+    calls[1].resolve({ ...RESULT, summary: "Old corner" });
+    await tick(10_000);
+    let answer: unknown;
+    act(() => { void walk().takeLook().then((a) => { answer = a; }); });
+    await tick();
+    expect(calls).toHaveLength(3);       // a new photo, not the one from 10 s ago
+    calls[2].resolve(RESULT);
+    await tick();
+    expect(answer).toEqual({ ok: true, result: RESULT });
+  });
+
   it("a different question drops the extra photo", async () => {
     const { walk, onResult } = setup();
     act(() => { void walk().start(); });

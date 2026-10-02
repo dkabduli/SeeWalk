@@ -416,6 +416,9 @@ export default function WalkMode() {
           if (checking) hearing.current = false; // the speech is over; refreshBusy below
           // Long enough to be "VisionCompanion, <question>": start the answer's photo now
           if (checking && voiceSeconds >= PRIME_MIN_VOICE_S) walkRef.current?.primeLook();
+          // Every check is done (a failed one, or a second question within 3 s, decides nothing):
+          // a photo no question took is said as a normal alert, never kept for a later question
+          if (!checking) walkRef.current?.releaseLook();
           refreshBusy();
         },
         () => walkRef.current?.releaseLook(),    // not a command: speak that photo as a normal alert
@@ -626,6 +629,7 @@ export default function WalkMode() {
       return;
     }
     if (c.intent === "whats_ahead" || c.intent === "path") {
+      if (aheadBusyRef.current) return;          // the button already asked: one look, one answer
       await answerFromScene(c.intent);
       return;
     }

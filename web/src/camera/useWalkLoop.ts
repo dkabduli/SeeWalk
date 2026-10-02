@@ -13,6 +13,9 @@ const MAX_IN_FLIGHT = 2;
 const SAME_HOLD_MS = 2400;
 const TIMEOUT_MS = 5000;
 const NO_CONN_REPEAT_MS = 20000;
+// A look started for a spoken question (primeLook) answers it only this soon after: the speech (up to
+// 4 s) plus the server's check of the words
+const PRIMED_FRESH_MS = 8000;
 
 /** What "What's ahead?" gets back. */
 export type CheckResult =
@@ -49,6 +52,10 @@ export function useWalkLoop({ lang, onResult, onSystem, onScene }: Options) {
   const askers = useRef<{ resolve: (r: CheckResult) => void; careful: boolean }[]>([]);
   // One look started when speech begins, so "what's ahead" does not wait for speech and then a photo.
   const primed = useRef<Promise<CheckResult> | null>(null);
+  // When it was taken. A check that failed or was ignored never takes or releases it, so an old one
+  // must not answer a later "what's ahead?" (it would describe where the walker was minutes ago).
+  const primedAt = useRef(0);
+  const freshPrimed = () => (primed.current && Date.now() - primedAt.current <= PRIMED_FRESH_MS ? primed.current : null);
   const resetFailures = useRef(false);
   // Paused while SeeWalk is answering a question: no background snapshots go to Gemini, so the
   // answer isn't competing with them. "What's ahead?" (checkNow) still works while paused.
@@ -88,22 +95,23 @@ export function useWalkLoop({ lang, onResult, onSystem, onScene }: Options) {
 
   /** Start a careful look as soon as someone speaks, before the server has heard the words. */
   const primeLook = useCallback(() => {
-    if (!running.current || primed.current) return;
+    if (!running.current || freshPrimed()) return;
     primed.current = checkNow(true);
+    primedAt.current = Date.now();
   }, [checkNow]);
 
   /** The careful look started when speech began, or a new careful one if none was started. */
   const takeLook = useCallback(() => {
-    const pending = primed.current;
+    const pending = freshPrimed();
     primed.current = null;
     return pending ?? checkNow(true);
   }, [checkNow]);
 
   /** Speech was not a scene question. Say the photo as a normal alert, once. */
   const releaseLook = useCallback(() => {
-    const pending = primed.current;
-    if (!pending) return;
+    const pending = freshPrimed();
     primed.current = null;
+    if (!pending) return;
     void pending.then((r) => {
       if (r.ok) onResultRef.current(r.result);
     });
